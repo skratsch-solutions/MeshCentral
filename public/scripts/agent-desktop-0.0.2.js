@@ -221,12 +221,16 @@ var CreateAgentRemoteDesktop = function (canvasid, scrolldiv) {
         if ((cmd == 3) || (cmd == 4) || (cmd == 7)) { X = (view[4] << 8) + view[5]; Y = (view[6] << 8) + view[7]; }
         if (obj.debugmode > 2) { console.log('CMD', cmd, cmdsize, X, Y); }
 
+        // Fix for view being too large for String.fromCharCode.apply()
+        var chunkSize = 10000;
+        let result = '';
+        for (let i = 0; i < view.length; i += chunkSize) { result += String.fromCharCode.apply(null, view.slice(i, i + chunkSize)); }
         // Record the command if needed
         if (obj.recordedData != null) {
             if (cmdsize > 65000) {
-                obj.recordedData.push(recordingEntry(2, 1, obj.shortToStr(27) + obj.shortToStr(8) + obj.intToStr(cmdsize) + obj.shortToStr(cmd) + obj.shortToStr(0) + obj.shortToStr(0) + obj.shortToStr(0) + String.fromCharCode.apply(null, view)));
+                obj.recordedData.push(recordingEntry(2, 1, obj.shortToStr(27) + obj.shortToStr(8) + obj.intToStr(cmdsize) + obj.shortToStr(cmd) + obj.shortToStr(0) + obj.shortToStr(0) + obj.shortToStr(0) + result));
             } else {
-                obj.recordedData.push(recordingEntry(2, 1, String.fromCharCode.apply(null, view)));
+                obj.recordedData.push(recordingEntry(2, 1, result));
             }
         }
 
@@ -575,7 +579,7 @@ var CreateAgentRemoteDesktop = function (canvasid, scrolldiv) {
                 var Delta = 0;
                 if (Action == obj.KeyAction.UP || Action == obj.KeyAction.DOWN) {
                     if (event.which) { ((event.which == 1) ? (Button = obj.MouseButton.LEFT) : ((event.which == 2) ? (Button = obj.MouseButton.MIDDLE) : (Button = obj.MouseButton.RIGHT))); }
-                    else if (event.button) { ((event.button == 0) ? (Button = obj.MouseButton.LEFT) : ((event.button == 1) ? (Button = obj.MouseButton.MIDDLE) : (Button = obj.MouseButton.RIGHT))); }
+                    else if (typeof event.button == 'number') { ((event.button == 0) ? (Button = obj.MouseButton.LEFT) : ((event.button == 1) ? (Button = obj.MouseButton.MIDDLE) : (Button = obj.MouseButton.RIGHT))); }
                 }
                 else if (Action == obj.KeyAction.SCROLL) {
                     if (event.detail) { Delta = (-1 * (event.detail * 120)); } else if (event.wheelDelta) { Delta = (event.wheelDelta * 3); }

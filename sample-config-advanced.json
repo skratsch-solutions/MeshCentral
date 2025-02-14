@@ -106,13 +106,14 @@
     "_runOnServerUpdated": "c:\\tmp\\mcupdate.bat",
     "_runOnServerError": "c:\\tmp\\mcerror.bat",
     "_log": "main,web,webrequest,cert",
+    "_debug": "main,web,webrequest,cert",
     "_syslog": "meshcentral",
     "_syslogauth": "meshcentral-auth",
     "_syslogjson": "meshcentral-json",
     "_syslogtcp": "localhost:514",
     "_webrtcConfig": {
       "iceServers": [
-        { "urls": "stun:stun.services.mozilla.com" },
+        { "urls": "stun:stun.cloudflare.com:3478" },
         { "urls": "stun:stun.l.google.com:19302" }
       ]
     },
@@ -132,6 +133,16 @@
         "password": "pass",
         "folderName": "MeshCentral-Backups",
         "maxFiles": 10
+      },
+      "_s3": {
+        "accessKey": "MYLONGACCESSKEY",
+        "secretKey": "MYLONGSECRETKEY",
+        "endpoint": "myS3.myserver.com",
+        "port": 9000,
+        "ssl": false,
+        "bucketName": "test",
+        "folderName": "MeshCentral-Backups",
+        "maxfiles": 10
       }
     },
     "_redirects": {
@@ -175,10 +186,12 @@
   "domains": {
     "": {
       "_siteStyle": 2,
+      "_showModernUIToggle": true,
       "title": "MyServer",
       "title2": "Servername",
       "_titlePicture": "title-sample.png",
       "_loginPicture": "title-sample.png",
+      "_pwaLogo": "title-sample.png",
       "_rootRedirect": "https://www.youtube.com/watch?v=Gs069dndIYk",
       "_mobileSite": false,
       "_maxDeviceView": 1000,
@@ -310,7 +323,8 @@
         "skip2factor": "127.0.0.1,192.168.2.0/24",
         "oldPasswordBan": 5,
         "banCommonPasswords": false,
-        "twoFactorTimeout": 300
+        "twoFactorTimeout": 300,
+        "duo2factor": true
       },
       "_twoFactorCookieDurationDays": 30,
       "_agentInviteCodes": true,
@@ -328,7 +342,9 @@
         "terminal": "{0} requesting remote terminal access. Grant access?",
         "files": "{0} requesting remote files access. Grant access?",
         "consentTimeout": 30,
-        "autoAcceptOnTimeout": false
+        "autoAcceptOnTimeout": false,
+        "autoAcceptIfNoUser": false,
+        "oldStyle": true
       },
       "_notificationMessages": {
         "title": "MeshCentral",
@@ -370,6 +386,8 @@
       "_agentBlockedIP": "127.0.0.1,::1",
       "___userSessionIdleTimeout__": "Number of user idle minutes before auto-disconnect",
       "_userSessionIdleTimeout": 30,
+      "___logoutOnIdleSessionTimeout": "Determines whether MeshCentral should logout after the session idle timeout elapsed or should just disconnect remote desktop, terminal and files.",
+      "_logoutOnIdleSessionTimeout": false,
       "userConsentFlags": {
         "desktopnotify": true,
         "terminalnotify": true,
@@ -440,6 +458,11 @@
       },
       "_redirects": {
         "meshcommander": "https://www.meshcommander.com/"
+      },
+      "_duo2factor": {
+        "integrationkey": "mykey",
+        "secretkey": "mysecret",
+        "apihostname": "api-xxxxxxxxxxx.duosecurity.com"
       },
       "_yubikey": {
         "id": "0000",

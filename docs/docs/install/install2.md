@@ -15,6 +15,34 @@ docker pull ghcr.io/ylianst/meshcentral:master
 !!!warning
     Do not use the built in mesh update function. Update docker the docker way.
 
+### Docker Compose
+
+```
+version: '3'
+services:
+  meshcentral:
+    restart: unless-stopped # always restart the container unless you stop it
+    image: ghcr.io/ylianst/meshcentral:1.1.27 # 1.1.27 is a version number OR use master for the master branch of bug fixes
+    ports:
+      - 80:80 # HTTP
+      - 443:443 # HTTPS
+      - 4433:4433 # AMT (Optional)
+    volumes:
+      - data:/opt/meshcentral/meshcentral-data # config.json and other important files live here
+      - user_files:/opt/meshcentral/meshcentral-files # where file uploads for users live
+      - backup:/opt/meshcentral/meshcentral-backups # location for the meshcentral backups - this should be mounted to an external storage
+      - web:/opt/meshcentral/meshcentral-web # location for site customization files
+volumes:
+  data:
+    driver: local
+  user_files:
+    driver: local
+  backup:
+    driver: local
+  web:
+    driver: local
+```
+
 ## Quick Start
 
 For some who want to skip this document entirely, there are quick install scripts that will get a MeshCentral2 instance up and running on Linux in a few minutes. These scripts will pretty much do what this document explains very rapidly. Right now, there are two such scripts available:
@@ -50,6 +78,12 @@ chmod 755 mc-azure-ubuntu1804.sh
 ```
 
 In this situation, port 3389 will be used to receive Intel AMT CIRA connections instead of port 4433. After these scripts are run, try accessing the server using a browser. MeshCentral will take a minute or two to create certificates after that, the server will be up. The first account to be created will be the site administrator – so don’t delay and create an account right away. Once running, move on to the MeshCentral’s user’s guide to configure your new server.
+
+### Elestio
+
+You can deploy MeshCentral on Elestio using one-click deployment. Elestio handles version updates, maintenance, securtiy, backups, etc. Additionally, Elestio supports MeshCentral by providing revenue share so go ahead and click below to deploy and start using.
+
+[![Deploy on Elestio](https://elest.io/images/logos/deploy-to-elestio-btn.png)](https://elest.io/open-source/meshcentral)
 
 ## Server Security - Adding Crowdsec
 

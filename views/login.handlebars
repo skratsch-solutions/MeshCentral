@@ -55,15 +55,15 @@
                                     <table>
                                         <tr>
                                             <td id=loginusername align=right width=100>Username:</td>
-                                            <td><input id=username {{{autocomplete}}}="username" type=text maxlength=64 name=username onchange=validateLogin(1) onkeyup=validateLogin(1,event) /></td>
+                                            <td><input id=username {{{autocomplete}}}="username" type=text maxlength=64 name=username required onchange=validateLogin(1) onkeyup=validateLogin(1,event)  /></td>
                                         </tr>
                                         <tr>
                                             <td align=right>Password:</td>
-                                            <td><input id=password {{{autocomplete}}}="current-password" type=password maxlength=256 name=password onchange=validateLogin(2) onkeyup=validateLogin(2,event) /></td>
+                                            <td><input id=password {{{autocomplete}}}="current-password" type=password maxlength=256 name=password required onchange=validateLogin(2) onkeyup=validateLogin(2,event)  /></td>
                                         </tr>
                                         <tr>
                                             <td><div id=showPassHintLink style=display:none><a onclick="return showPassHint(event);" href="#" style="cursor:pointer">Show Hint</a></div></td>
-                                            <td align=right><input id=loginButton type=submit value="Log In" disabled="disabled" /></td>
+                                            <td align=right><input id=loginButton type=submit value="Log In" /></td>
                                         </tr>
                                     </table>
                                     <div id="hrAccountDiv" style="display:none"><hr /></div>
@@ -193,6 +193,7 @@
                                                 <input style="display:none;float:right" id=emailKeyButton type=button value="Email" onclick="useEmailToken(1)" />
                                                 <input style="display:none;float:right" id=smsKeyButton type=button value="SMS" onclick="useSMSToken(1)" />
                                                 <input style="display:none;float:right" id=msgKeyButton type=button value="Messaging" onclick="useMsgToken(1)" />
+                                                <input style="display:none;float:right" id=duoKeyButton type=button value="Duo" onclick="useDuoToken(1)" />
                                             </div>
                                         </td>
                                     </tr>
@@ -221,6 +222,7 @@
                                                 <input style="display:none;float:right" id=emailKeyButton2 type=button value="Email" onclick="useEmailToken(2)" />
                                                 <input style="display:none;float:right" id=smsKeyButton2 type=button value="SMS" onclick="useSMSToken(2)" />
                                                 <input style="display:none;float:right" id=msgKeyButton2 type=button value="Messaging" onclick="useMsgToken(2)" />
+                                                <input style="display:none;float:right" id=duoKeyButton2 type=button value="Duo" onclick="useDuoToken(2)" />
                                             </div>
                                         </td>
                                     </tr>
@@ -337,6 +339,7 @@
         var webPageFullScreen = true;
         var nightMode = (getstore('_nightMode', '0') == '1');
         var publicKeyCredentialRequestOptions = null;
+        var otpduo = (decodeURIComponent('{{{otpduo}}}') === 'true');
         var otpemail = (decodeURIComponent('{{{otpemail}}}') === 'true');
         var otpsms = (decodeURIComponent('{{{otpsms}}}') === 'true');
         var otpmsg = (decodeURIComponent('{{{otpmsg}}}') === 'true');
@@ -456,7 +459,6 @@
             window.onresize = center;
             center();
 
-            validateLogin();
             validateCreate();
             if (loginMode.length != 0) { go(parseInt(loginMode)); } else { go(1); }
             QV('newAccountDiv', (newAccount === '1') || (newAccount === 'true')); // If new accounts are not allowed, don't display the new account link.
@@ -475,6 +477,7 @@
                 QV('emailKeyButton', otpemail && (messageid != 2) && (messageid != 4) && (messageid != 6));
                 QV('smsKeyButton', otpsms && (messageid != 2) && (messageid != 4) && (messageid != 6));
                 QV('msgKeyButton', otpmsg && (messageid != 2) && (messageid != 4) && (messageid != 6));
+                QV('duoKeyButton', otpduo && (messageid != 2) && (messageid != 4) && (messageid != 6));
 
                 // If hardware key is an option, trigger it now
                 if (autofido && twofakey) { setTimeout(function () { useSecurityKey(1); }, 300); }
@@ -488,6 +491,7 @@
                 QV('emailKeyButton2', otpemail && (messageid != 2) && (messageid != 4) && (messageid != 6));
                 QV('smsKeyButton2', otpsms && (messageid != 2) && (messageid != 4) && (messageid != 6));
                 QV('msgKeyButton2', otpmsg && (messageid != 2) && (messageid != 4) && (messageid != 6));
+                QV('duoKeyButton2', otpduo && (messageid != 2) && (messageid != 4) && (messageid != 6));
 
                 // If hardware key is an option, trigger it now
                 if (autofido && twofakey) { setTimeout(function () { useSecurityKey(2); }, 300); }
@@ -618,6 +622,18 @@
             }
         }
 
+        function useDuoToken(panelAction) {
+            if (panelAction == 1) {
+                Q('hwtokenInput').value = '**duo**';
+                QE('tokenOkButton', true);
+                Q('tokenOkButton').click();
+            } else if (panelAction == 2) {
+                Q('resetHwtokenInput').value = '**duo**';
+                QE('resetTokenOkButton', true);
+                Q('resetTokenOkButton').click();
+            }
+        }
+
         function showPassHint(e) {
             messagebox("Password Hint", passhint);
             haltEvent(e);
@@ -662,11 +678,11 @@
         }
 
         function validateLogin(box, e) {
-            var ok = ((Q('username').value.length > 0) && (Q('username').value.indexOf(' ') == -1) && (Q('password').value.length > 0));
-            QE('loginButton', ok);
-            setDialogMode(0);
-            if ((e != null) && (e.keyCode == 13)) { if ((box == 1) && (Q('username').value != '')) { Q('password').focus(); } else if ((box == 2) && (Q('password').value != '')) { Q('loginButton').click(); } }
-            if (e != null) { haltEvent(e); }
+            setTimeout(function(){
+                setDialogMode(0);
+                if ((e != null) && (e.keyCode == 13)) { if ((box == 1) && (Q('username').value != '')) { Q('password').focus(); } else if ((box == 2) && (Q('password').value != '')) { Q('loginButton').click(); } }
+                if (e != null) { haltEvent(e); }
+            }, 100);
         }
 
         function validateCreate(box, e) {

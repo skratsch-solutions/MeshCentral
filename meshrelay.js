@@ -119,6 +119,9 @@ function CreateMeshRelayEx(parent, ws, req, domain, user, cookie) {
         try { sr = parseInt(req.query.slowrelay); } catch (ex) { }
         if ((typeof sr == 'number') && (sr > 0) && (sr < 1000)) { obj.ws.slowRelay = sr; }
     }
+    
+    // Check if protocol is set in the cookie and if so replace req.query.p but only if its not already set or blank
+    if ((cookie != null) && (typeof cookie.p == 'number') && (obj.req.query.p === undefined || obj.req.query.p === "")) { obj.req.query.p = cookie.p; }
 
     // Mesh Rights
     const MESHRIGHT_EDITMESH = 1;
@@ -449,8 +452,8 @@ function CreateMeshRelayEx(parent, ws, req, domain, user, cookie) {
                                         userid: sessionUser._id,
                                         username: sessionUser.name,
                                         sessionid: obj.id,
-                                        ipaddr1: (obj.req == null) ? null : obj.req.clientIp,
-                                        ipaddr2: ((obj.peer == null) || (obj.peer.req == null)) ? null : obj.peer.req.clientIp,
+                                        ipaddr1: ((obj.peer == null) || (obj.peer.req == null)) ? null : obj.peer.req.clientIp,
+                                        ipaddr2: (obj.req == null) ? null : obj.req.clientIp,
                                         time: new Date().toLocaleString(),
                                         protocol: (((obj.req == null) || (obj.req.query == null)) ? null : obj.req.query.p),
                                         nodeid: (((obj.req == null) || (obj.req.query == null)) ? null : obj.req.query.nodeid)
@@ -884,7 +887,7 @@ function CreateMeshRelayEx(parent, ws, req, domain, user, cookie) {
                 if (user != null) { rcookieData.ruserid = user._id; } else if (obj.nouser === true) { rcookieData.nouser = 1; }
                 const rcookie = parent.parent.encodeCookie(rcookieData, parent.parent.loginCookieEncryptionKey);
                 if (obj.id == null) { obj.id = parent.crypto.randomBytes(9).toString('base64').replace(/\+/g, '@').replace(/\//g, '$'); } // If there is no connection id, generate one.
-                const command = { nodeid: cookie.nodeid, action: 'msg', type: 'tunnel', value: '*/' + xdomain + 'meshrelay.ashx?id=' + obj.id + '&rauth=' + rcookie, tcpport: cookie.tcpport, tcpaddr: cookie.tcpaddr, soptions: {} };
+                const command = { nodeid: cookie.nodeid, action: 'msg', type: 'tunnel', value: '*/' + xdomain + 'meshrelay.ashx?' + (obj.req.query.p != null ? ('p=' + obj.req.query.p + '&') : '') + 'id=' + obj.id + '&rauth=' + rcookie, tcpport: cookie.tcpport, tcpaddr: cookie.tcpaddr, soptions: {} };
                 if (user) { command.userid = user._id; }
                 if (typeof domain.consentmessages == 'object') {
                     if (typeof domain.consentmessages.title == 'string') { command.soptions.consentTitle = domain.consentmessages.title; }
@@ -893,6 +896,8 @@ function CreateMeshRelayEx(parent, ws, req, domain, user, cookie) {
                     if (typeof domain.consentmessages.files == 'string') { command.soptions.consentMsgFiles = domain.consentmessages.files; }
                     if ((typeof domain.consentmessages.consenttimeout == 'number') && (domain.consentmessages.consenttimeout > 0)) { command.soptions.consentTimeout = domain.consentmessages.consenttimeout; }
                     if (domain.consentmessages.autoacceptontimeout === true) { command.soptions.consentAutoAccept = true; }
+                    if (domain.consentmessages.autoacceptifnouser === true) { command.soptions.consentAutoAcceptIfNoUser = true; }
+                    if (domain.consentmessages.oldstyle === true) { command.soptions.oldStyle = true; }
                 }
                 if (typeof domain.notificationmessages == 'object') {
                     if (typeof domain.notificationmessages.title == 'string') { command.soptions.notifyTitle = domain.notificationmessages.title; }
@@ -922,7 +927,7 @@ function CreateMeshRelayEx(parent, ws, req, domain, user, cookie) {
                 if (obj.id == null) { obj.id = parent.crypto.randomBytes(9).toString('base64').replace(/\+/g, '@').replace(/\//g, '$'); } // If there is no connection id, generate one.
                 const rcookie = parent.parent.encodeCookie({ ruserid: user._id }, parent.parent.loginCookieEncryptionKey);
                 if (obj.req.query.tcpport != null) {
-                    const command = { nodeid: obj.req.query.nodeid, action: 'msg', type: 'tunnel', userid: user._id, value: '*/' + xdomain + 'meshrelay.ashx?id=' + obj.id + '&rauth=' + rcookie, tcpport: obj.req.query.tcpport, tcpaddr: ((obj.req.query.tcpaddr == null) ? '127.0.0.1' : obj.req.query.tcpaddr), soptions: {} };
+                    const command = { nodeid: obj.req.query.nodeid, action: 'msg', type: 'tunnel', userid: user._id, value: '*/' + xdomain + 'meshrelay.ashx?' + (obj.req.query.p != null ? ('p=' + obj.req.query.p + '&') : '') + 'id=' + obj.id + '&rauth=' + rcookie, tcpport: obj.req.query.tcpport, tcpaddr: ((obj.req.query.tcpaddr == null) ? '127.0.0.1' : obj.req.query.tcpaddr), soptions: {} };
                     if (typeof domain.consentmessages == 'object') {
                         if (typeof domain.consentmessages.title == 'string') { command.soptions.consentTitle = domain.consentmessages.title; }
                         if (typeof domain.consentmessages.desktop == 'string') { command.soptions.consentMsgDesktop = domain.consentmessages.desktop; }
@@ -930,6 +935,8 @@ function CreateMeshRelayEx(parent, ws, req, domain, user, cookie) {
                         if (typeof domain.consentmessages.files == 'string') { command.soptions.consentMsgFiles = domain.consentmessages.files; }
                         if ((typeof domain.consentmessages.consenttimeout == 'number') && (domain.consentmessages.consenttimeout > 0)) { command.soptions.consentTimeout = domain.consentmessages.consenttimeout; }
                         if (domain.consentmessages.autoacceptontimeout === true) { command.soptions.consentAutoAccept = true; }
+                        if (domain.consentmessages.autoacceptifnouser === true) { command.soptions.consentAutoAcceptIfNoUser = true; }
+                        if (domain.consentmessages.oldstyle === true) { command.soptions.oldStyle = true; }
                     }
                     if (typeof domain.notificationmessages == 'object') {
                         if (typeof domain.notificationmessages.title == 'string') { command.soptions.notifyTitle = domain.notificationmessages.title; }
@@ -940,14 +947,15 @@ function CreateMeshRelayEx(parent, ws, req, domain, user, cookie) {
                     parent.parent.debug('relay', 'Relay: Sending agent TCP tunnel command: ' + JSON.stringify(command));
                     if (obj.sendAgentMessage(command, user._id, domain.id) == false) { delete obj.id; parent.parent.debug('relay', 'Relay: Unable to contact this agent (' + obj.req.clientIp + ')'); }
                 } else if (obj.req.query.udpport != null) {
-                    const command = { nodeid: obj.req.query.nodeid, action: 'msg', type: 'tunnel', userid: user._id, value: '*/' + xdomain + 'meshrelay.ashx?id=' + obj.id + '&rauth=' + rcookie, udpport: obj.req.query.udpport, udpaddr: ((obj.req.query.udpaddr == null) ? '127.0.0.1' : obj.req.query.udpaddr), soptions: {} };
-                    if (typeof domain.consentmessages == 'object') {
+                    const command = { nodeid: obj.req.query.nodeid, action: 'msg', type: 'tunnel', userid: user._id, value: '*/' + xdomain + 'meshrelay.ashx?' + (obj.req.query.p != null ? ('p=' + obj.req.query.p + '&') : '') + 'id=' + obj.id + '&rauth=' + rcookie, udpport: obj.req.query.udpport, udpaddr: ((obj.req.query.udpaddr == null) ? '127.0.0.1' : obj.req.query.udpaddr), soptions: {} };                    if (typeof domain.consentmessages == 'object') {
                         if (typeof domain.consentmessages.title == 'string') { command.soptions.consentTitle = domain.consentmessages.title; }
                         if (typeof domain.consentmessages.desktop == 'string') { command.soptions.consentMsgDesktop = domain.consentmessages.desktop; }
                         if (typeof domain.consentmessages.terminal == 'string') { command.soptions.consentMsgTerminal = domain.consentmessages.terminal; }
                         if (typeof domain.consentmessages.files == 'string') { command.soptions.consentMsgFiles = domain.consentmessages.files; }
                         if ((typeof domain.consentmessages.consenttimeout == 'number') && (domain.consentmessages.consenttimeout > 0)) { command.soptions.consentTimeout = domain.consentmessages.consenttimeout; }
                         if (domain.consentmessages.autoacceptontimeout === true) { command.soptions.consentAutoAccept = true; }
+                        if (domain.consentmessages.autoacceptifnouser === true) { command.soptions.consentAutoAcceptIfNoUser = true; }
+                        if (domain.consentmessages.oldstyle === true) { command.soptions.oldStyle = true; }
                     }
                     if (typeof domain.notificationmessages == 'object') {
                         if (typeof domain.notificationmessages.title == 'string') { command.soptions.notifyTitle = domain.notificationmessages.title; }
@@ -999,6 +1007,8 @@ function CreateMeshRelayEx(parent, ws, req, domain, user, cookie) {
                     if (typeof domain.consentmessages.files == 'string') { command.soptions.consentMsgFiles = domain.consentmessages.files; }
                     if ((typeof domain.consentmessages.consenttimeout == 'number') && (domain.consentmessages.consenttimeout > 0)) { command.soptions.consentTimeout = domain.consentmessages.consenttimeout; }
                     if (domain.consentmessages.autoacceptontimeout === true) { command.soptions.consentAutoAccept = true; }
+                    if (domain.consentmessages.autoacceptifnouser === true) { command.soptions.consentAutoAcceptIfNoUser = true; }
+                    if (domain.consentmessages.oldstyle === true) { command.soptions.oldStyle = true; }
                 }
                 if (typeof domain.notificationmessages == 'object') {
                     if (typeof domain.notificationmessages.title == 'string') { command.soptions.notifyTitle = domain.notificationmessages.title; }
@@ -1227,6 +1237,7 @@ function CreateLocalRelayEx(parent, ws, req, domain, user, cookie) {
             else if (req.query.p == 11) { protocolStr = 'SSH-TERM'; }
             else if (req.query.p == 12) { protocolStr = 'VNC'; }
             else if (req.query.p == 13) { protocolStr = 'SSH-FILES'; }
+            else if (req.query.p == 14) { protocolStr = 'Web-TCP'; }
             var event = { etype: 'relay', action: 'relaylog', domain: domain.id, userid: obj.user._id, username: obj.user.name, msgid: 121, msgArgs: [obj.id, protocolStr, obj.host, Math.floor((Date.now() - obj.time) / 1000)], msg: 'Ended local relay session \"' + obj.id + '\", protocol ' + protocolStr + ' to ' + obj.host + ', ' + Math.floor((Date.now() - obj.time) / 1000) + ' second(s)', nodeid: obj.req.query.nodeid, protocol: req.query.p, in: inTraffc, out: outTraffc };
             if (obj.guestname) { event.guestname = obj.guestname; } // If this is a sharing session, set the guest name here.
             parent.parent.DispatchEvent(['*', user._id], obj, event);
@@ -1281,6 +1292,7 @@ function CreateLocalRelayEx(parent, ws, req, domain, user, cookie) {
                 else if (req.query.p == 11) { protocolStr = 'SSH-TERM'; }
                 else if (req.query.p == 12) { protocolStr = 'VNC'; }
                 else if (req.query.p == 13) { protocolStr = 'SSH-FILES'; }
+                else if (req.query.p == 14) { protocolStr = 'Web-TCP'; }
                 obj.time = Date.now();
                 var event = { etype: 'relay', action: 'relaylog', domain: domain.id, userid: obj.user._id, username: obj.user.name, msgid: 120, msgArgs: [obj.id, protocolStr, obj.host], msg: 'Started local relay session \"' + obj.id + '\", protocol ' + protocolStr + ' to ' + obj.host, nodeid: req.query.nodeid, protocol: req.query.p };
                 if (obj.guestname) { event.guestname = obj.guestname; } // If this is a sharing session, set the guest name here.

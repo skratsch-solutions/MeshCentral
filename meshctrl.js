@@ -16,7 +16,7 @@ var settings = {};
 const crypto = require('crypto');
 const args = require('minimist')(process.argv.slice(2));
 const path = require('path');
-const possibleCommands = ['edituser', 'listusers', 'listusersessions', 'listdevicegroups', 'listdevices', 'listusersofdevicegroup', 'listevents', 'logintokens', 'serverinfo', 'userinfo', 'adduser', 'removeuser', 'adddevicegroup', 'removedevicegroup', 'editdevicegroup', 'broadcast', 'showevents', 'addusertodevicegroup', 'removeuserfromdevicegroup', 'addusertodevice', 'removeuserfromdevice', 'sendinviteemail', 'generateinvitelink', 'config', 'movetodevicegroup', 'deviceinfo', 'removedevice', 'editdevice', 'addusergroup', 'listusergroups', 'removeusergroup', 'runcommand', 'shell', 'upload', 'download', 'deviceopenurl', 'devicemessage', 'devicetoast', 'addtousergroup', 'removefromusergroup', 'removeallusersfromusergroup', 'devicesharing', 'devicepower', 'indexagenterrorlog', 'agentdownload', 'report', 'grouptoast', 'groupmessage'];
+const possibleCommands = ['edituser', 'listusers', 'listusersessions', 'listdevicegroups', 'listdevices', 'listusersofdevicegroup', 'listevents', 'logintokens', 'serverinfo', 'userinfo', 'adduser', 'removeuser', 'adddevicegroup', 'removedevicegroup', 'editdevicegroup', 'broadcast', 'showevents', 'addusertodevicegroup', 'removeuserfromdevicegroup', 'addusertodevice', 'removeuserfromdevice', 'sendinviteemail', 'generateinvitelink', 'config', 'movetodevicegroup', 'deviceinfo', 'removedevice', 'editdevice', 'addlocaldevice', 'addamtdevice', 'addusergroup', 'listusergroups', 'removeusergroup', 'runcommand', 'shell', 'upload', 'download', 'deviceopenurl', 'devicemessage', 'devicetoast', 'addtousergroup', 'removefromusergroup', 'removeallusersfromusergroup', 'devicesharing', 'devicepower', 'indexagenterrorlog', 'agentdownload', 'report', 'grouptoast', 'groupmessage', 'webrelay'];
 if (args.proxy != null) { try { require('https-proxy-agent'); } catch (ex) { console.log('Missing module "https-proxy-agent", type "npm install https-proxy-agent" to install it.'); return; } }
 
 if (args['_'].length == 0) {
@@ -36,6 +36,8 @@ if (args['_'].length == 0) {
     console.log("  ListEvents                  - List server events.");
     console.log("  LoginTokens                 - List, create and remove login tokens.");
     console.log("  DeviceInfo                  - Show information about a device.");
+    console.log("  AddLocalDevice              - Add a local device.");
+    console.log("  AddAmtDevice                - Add a AMT device.");
     console.log("  EditDevice                  - Make changes to a device.");
     console.log("  RemoveDevice                - Delete a device.");
     console.log("  Config                      - Perform operation on config.json file.");
@@ -63,6 +65,7 @@ if (args['_'].length == 0) {
     console.log("  Shell                       - Access command shell of a remote device.");
     console.log("  Upload                      - Upload a file to a remote device.");
     console.log("  Download                    - Download a file from a remote device.");
+    console.log("  WebRelay                    - Creates a HTTP/HTTPS webrelay link for a remote device.");
     console.log("  DeviceOpenUrl               - Open a URL on a remote device.");
     console.log("  DeviceMessage               - Open a message box on a remote device.");
     console.log("  DeviceToast                 - Display a toast notification on a remote device.");
@@ -106,6 +109,22 @@ if (args['_'].length == 0) {
         case 'removedevice':
         case 'editdevice': {
             if (args.id == null) { console.log(winRemoveSingleQuotes("Missing device id, use --id '[deviceid]'")); }
+            else { ok = true; }
+            break;
+        }
+        case 'addlocaldevice': {
+            if (args.id == null) { console.log(winRemoveSingleQuotes("Missing device id, use --id '[deviceid]'")); }
+            else if (args.devicename == null) { console.log(winRemoveSingleQuotes("Missing devicename, use --devicename [devicename]")); }
+            else if (args.hostname == null) { console.log(winRemoveSingleQuotes("Missing hostname, use --hostname [hostname]")); }
+            else { ok = true; }
+            break;
+        }
+        case 'addamtdevice': {
+            if (args.id == null) { console.log(winRemoveSingleQuotes("Missing device id, use --id '[deviceid]'")); }
+            else if (args.devicename == null) { console.log(winRemoveSingleQuotes("Missing devicename, use --devicename [devicename]")); }
+            else if (args.hostname == null) { console.log(winRemoveSingleQuotes("Missing hostname, use --hostname [hostname]")); }
+            else if (args.user == null) { console.log(winRemoveSingleQuotes("Missing user, use --user [user]")); }
+            else if (args.pass == null) { console.log(winRemoveSingleQuotes("Missing pass, use --pass [pass]")); }
             else { ok = true; }
             break;
         }
@@ -256,6 +275,12 @@ if (args['_'].length == 0) {
             if (args.id == null) { console.log(winRemoveSingleQuotes("Missing device id, use --id '[deviceid]'")); }
             else if (args.file == null) { console.log("Remote file missing, use --file [file] specify the remote file to download"); }
             else if (args.target == null) { console.log("Target path missing, use --target [path] to specify the local download location"); }
+            else { ok = true; }
+            break;
+        }
+        case 'webrelay': {
+            if (args.id == null) { console.log(winRemoveSingleQuotes("Missing device id, use --id '[deviceid]'")); }
+            else if (args.type == null) { console.log(winRemoveSingleQuotes("Missing protocol type, use --type [http,https]")); }
             else { ok = true; }
             break;
         }
@@ -788,6 +813,55 @@ if (args['_'].length == 0) {
                         }
                         break;
                     }
+                    case 'addlocaldevice': {
+                        console.log("Add a Local Device, Example usages:\r\n");
+                        console.log(winRemoveSingleQuotes("  MeshCtrl AddLocalDevice --id 'meshid' --devicename 'devicename' --hostname 'hostname'"));
+                        console.log(winRemoveSingleQuotes("  MeshCtrl AddLocalDevice --id 'meshid' --devicename 'devicename' --hostname 'hostname' --type 6"));
+                        console.log("\r\nRequired arguments:\r\n");
+                        if (process.platform == 'win32') {
+                            console.log("  --id [meshid]                - The mesh identifier.");
+                            console.log("  --devicename [devicename]    - The device name.");
+                            console.log("  --hostname [hostname]        - The devices hostname or ip address.");
+                        } else {
+                            console.log("  --id '[meshid]'              - The mesh identifier.");
+                            console.log("  --devicename '[devicename]'  - The device name.");
+                            console.log("  --hostname '[hostname]'      - The devices hostname or ip address.");
+                        }
+
+                        console.log("\r\nOptional arguments:\r\n");
+                        console.log("  --type [TypeNumber] - With the following choices:");
+                        console.log("    type 4            - Default, Windows (RDP)");
+                        console.log("    type 6            - Linux (SSH/SCP/VNC)");
+                        console.log("    type 29           - macOS (SSH/SCP/VNC)");
+                        break;
+                    }
+                    case 'addamtdevice': {
+                        console.log("Add an Intel AMT Device, Example usages:\r\n");
+                        console.log(winRemoveSingleQuotes("  MeshCtrl AddAmtDevice --id 'meshid' --devicename 'devicename' --hostname 'hostname --user 'admin' --pass 'admin'"));
+                        console.log(winRemoveSingleQuotes("  MeshCtrl AddAmtDevice --id 'meshid' --devicename 'devicename' --hostname 'hostname --user 'admin' --pass 'admin' --notls"));
+                        console.log("\r\nRequired arguments:\r\n");
+                        if (process.platform == 'win32') {
+                            console.log("  --id [meshid]                - The mesh identifier.");
+                            console.log("  --devicename [devicename]    - The device name.");
+                            console.log("  --hostname [hostname]        - The devices hostname or ip address.");
+                            console.log("  --user [user]                - The devices AMT username.");
+                            console.log("  --pass [pass]                - The devices AMT password.");
+                            console.log("")
+                        } else {
+                            console.log("  --id '[meshid]'              - The mesh identifier.");
+                            console.log("  --devicename '[devicename]'  - The device name.");
+                            console.log("  --hostname '[hostname]'      - The devices hostname or ip address.");
+                            console.log("  --user '[user]'              - The devices AMT username.");
+                            console.log("  --pass '[pass]'              - The devices AMT password.");
+                        }
+                        console.log("\r\nOptional arguments:\r\n");
+                        if (process.platform == 'win32') {
+                            console.log("  --notls                      - Use No TLS Security.");
+                        } else {
+                            console.log("  --notls                      - Use No TLS Security.");
+                        }
+                        break;
+                    }
                     case 'editdevice': {
                         console.log("Change information about a device, Example usages:\r\n");
                         console.log(winRemoveSingleQuotes("  MeshCtrl EditDevice --id 'deviceid' --name 'device1'"));
@@ -946,6 +1020,21 @@ if (args['_'].length == 0) {
                         console.log("  --file [remotefile]    - The remote file to download.");
                         console.log("\r\nOptional arguments:\r\n");
                         console.log("  --target [localpath]   - The local path to download the file to.");
+                        break;
+                    }
+                    case 'webrelay': {
+                        console.log("Generate a webrelay URL to access a HTTP/HTTPS service on a remote device, Example usages:\r\n");
+                        console.log(winRemoveSingleQuotes("  MeshCtrl WebRelay --id 'deviceid' --type http --port 80"));
+                        console.log(winRemoveSingleQuotes("  MeshCtrl WebRelay --id 'deviceid' --type https --port 443"));
+                        console.log("\r\nRequired arguments:\r\n");
+                        if (process.platform == 'win32') {
+                            console.log("  --id [deviceid]     - The device identifier.");
+                        } else {
+                            console.log("  --id '[deviceid]'     - The device identifier.");
+                        }
+                        console.log("  --type [http,https]   - Type of relay from remote device, http or https.");
+                        console.log("\r\nOptional arguments:\r\n");
+                        console.log("  --port [portnumber]   - Set alternative port for http or https, default is 80 for http and 443 for https.");
                         break;
                     }
                     case 'deviceopenurl': {
@@ -1270,10 +1359,10 @@ function serverConnect() {
         var domainid = '', username = 'admin';
         if (args.logindomain != null) { domainid = args.logindomain; }
         if (args.loginuser != null) { username = args.loginuser; }
-        url += '?auth=' + encodeCookie({ userid: 'user/' + domainid + '/' + username, domainid: domainid }, ckey);
+        url += (url.indexOf('?key=') >= 0 ? '&auth=' : '?auth=') + encodeCookie({ userid: 'user/' + domainid + '/' + username, domainid: domainid }, ckey);
     } else {
         if (args.logindomain != null) { console.log("--logindomain can only be used along with --loginkey."); process.exit(); return; }
-        if (loginCookie != null) { url += '?auth=' + loginCookie; }
+        if (loginCookie != null) { url += (url.indexOf('?key=') >= 0 ? '&auth=' : '?auth=') + loginCookie; }
     }
 
     const ws = new WebSocket(url, options);
@@ -1487,6 +1576,29 @@ function serverConnect() {
             case 'removedevicegroup': {
                 var op = { action: 'deletemesh', responseid: 'meshctrl' };
                 if (args.id) { op.meshid = args.id; } else if (args.group) { op.meshname = args.group; }
+                ws.send(JSON.stringify(op));
+                break;
+            }
+            case 'addamtdevice': {
+                var op = { action: 'addamtdevice', amttls: 1, responseid: 'meshctrl' };
+                if (args.id) { op.meshid = args.id; }
+                if ((typeof args.devicename == 'string') && (args.devicename != '')) { op.devicename = args.devicename; }
+                if ((typeof args.hostname == 'string') && (args.hostname != '')) { op.hostname = args.hostname; }
+                if ((typeof args.user == 'string') && (args.user != '')) { op.amtusername = args.user; }
+                if ((typeof args.pass == 'string') && (args.pass != '')) { op.amtpassword = args.pass; }
+                if (args.notls) { op.amttls = 0; }
+                ws.send(JSON.stringify(op));
+                break;
+            }
+            case 'addlocaldevice': {
+                var op = { action: 'addlocaldevice', type: 4, responseid: 'meshctrl' };
+                if (args.id) { op.meshid = args.id; }
+                if ((typeof args.devicename == 'string') && (args.devicename != '')) { op.devicename = args.devicename; }
+                if ((typeof args.hostname == 'string') && (args.hostname != '')) { op.hostname = args.hostname; }
+                if (args.type) {
+                    if ((typeof parseInt(args.type) != 'number') || isNaN(parseInt(args.type))) { console.log("Invalid type."); process.exit(1); return; }
+                    op.type = args.type;
+                }
                 ws.send(JSON.stringify(op));
                 break;
             }
@@ -1712,6 +1824,29 @@ function serverConnect() {
                 })
                 req.on('error', function (error) { console.error(error); process.exit(1); })
                 req.end()
+                break;
+            }
+            case 'webrelay': {
+                var protocol = null;
+                if (args.type != null) {
+                    if (args.type == 'http') {
+                        protocol = 1;
+                    } else if (args.type == 'https') {
+                        protocol = 2;
+                    } else {
+                        console.log("Unknown protocol type: " + args.type); process.exit(1);
+                    }
+                }
+                var port = null;
+                if (typeof args.port == 'number') {
+                    if ((args.port < 1) || (args.port > 65535)) { console.log("Port number must be between 1 and 65535."); process.exit(1); }
+                    port = args.port;
+                } else if (protocol == 1) {
+                    port = 80;
+                } else if (protocol == 2) {
+                    port = 443;
+                }
+                ws.send(JSON.stringify({ action: 'webrelay', nodeid: args.id, port: port, appid: protocol, responseid: 'meshctrl' }));
                 break;
             }
             case 'devicesharing': {
@@ -2084,6 +2219,8 @@ function serverConnect() {
             case 'toast': // TOAST
             case 'adduser': // ADDUSER
             case 'edituser': // EDITUSER
+            case 'addamtdevice': // ADDAMTDEVICE
+            case 'addlocaldevice': // ADDLOCALDEVICE
             case 'removedevices': // REMOVEDEVICE
             case 'changedevice': // EDITDEVICE
             case 'deleteuser': // REMOVEUSER
@@ -2116,6 +2253,7 @@ function serverConnect() {
                 break;
             }
             case 'createDeviceShareLink':
+            case 'webrelay':
                 if (data.result == 'OK') {
                     if (data.publicid) { console.log('ID: ' + data.publicid); }
                     console.log('URL: ' + data.url);
@@ -2401,6 +2539,8 @@ function serverConnect() {
                 if (data.cause == 'noauth') {
                     if (data.msg == 'tokenrequired') {
                         console.log('Authentication token required, use --token [number].');
+                    } else if (data.msg == 'nokey') {
+                        console.log('URL key is invalid or missing, please specify ?key=xxx in url');
                     } else {
                         if ((args.loginkeyfile != null) || (args.loginkey != null)) {
                             console.log('Invalid login, check the login key and that this computer has the correct time.');

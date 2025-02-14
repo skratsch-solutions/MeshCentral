@@ -94,9 +94,41 @@
           }
         },
         "sqlite3": {
-          "type": "boolean",
+          "type": [ "boolean", "string", "object" ],
           "default": false,
-          "description": "Set true to use SQLite3 as a local MeshCentral database."
+          "description": "Set boolean true to use SQLite3 as a local MeshCentral database with default db filename 'meshcentral' or enter a string for a different db filename. Extension .sqlite is appended",
+          "properties":{
+            "name": {
+              "type": "string",
+              "default": "meshcentral",
+              "description": "Database filename. '.sqlite' is appended"
+            },
+            "journalMode": {
+              "type": "string",
+              "default": "delete",
+              "description": "DELETE, TRUNCATE, PERSIST, MEMORY, WAL. NONE not allowed. See: https://www.sqlite.org/pragma.html#pragma_journal_mode"
+            },
+            "journalSize": {
+              "type": "integer",
+              "default": 4096000,
+              "description": "Maximum size of the journal file in bytes. Can grow larger if needed, but will shrink to this size. -1 is unlimited growth. See: https://www.sqlite.org/pragma.html#pragma_journal_size_limit"
+            },
+            "autoVacuum": {
+              "type": "string",
+              "default": "incremental",
+              "description": "none, full, incremental. Removes unused pages and shrinks databasefile during maintenance. See: https://www.sqlite.org/pragma.html#pragma_auto_vacuum"
+            },
+            "incrementalVacuum": {
+              "type": "integer",
+              "default": 100,
+              "description": "Maximum amount of pages to free during maintenance. Default page size is 4k, so default frees up to 400k from the databasefile. See: https://www.sqlite.org/pragma.html#pragma_incremental_vacuum"
+            },
+            "startupVacuum": {
+              "type": "boolean",
+              "default": false,
+              "description": "Do a full VACUUM at startup. Shrinks the db file and optimizes it. This can take some time with a large database and can temporarily take up to double the database size on disk. See: https://www.sqlite.org/lang_vacuum.html"
+            }
+          }
         },
         "mySQL": {
           "type": "object",
@@ -488,11 +520,6 @@
           "default": true,
           "description": "When enabled, MeshCentral will automatically monitor and manage Intel AMT devices."
         },
-        "orphanAgentUser": {
-          "type": "string",
-          "default": null,
-          "description": "If an agent attempts to connect to a unknown device group, automatically create a new device group and grant access to the specified user. Example: admin"
-        },
         "agentIdleTimeout": {
           "type": "integer",
           "minimum": 1,
@@ -740,13 +767,27 @@
           "default": false,
           "description": "When set to true, the MPS server will only accept TLS 1.2 and 1.3 connections. Older Intel AMT devices will not be able to connect."
         },
+        "prometheus": {
+          "type": [
+            "boolean",
+            "number"
+          ],
+          "default": false,
+          "description": "When set to true, a prometheus metrics endpoint will be available \"0.0.0.0:9464/metrics\". If you specify a number instead, the prometheus metrics will listen on this port instead of the default 9464."
+        },
         "no2FactorAuth": {
           "type": "boolean",
           "default": false
         },
+        "debug": {
+          "type": "string",
+          "default": null,
+          "description": "You can set this value in the format 'web,agent,relay', where each value is separated by a comma. Each specified value will output logs to the MeshCentral console. Setting it to '*' will output all logs."
+        },
         "log": {
           "type": "string",
-          "default": null
+          "default": null,
+          "description": "You can set this value in the format 'web,agent,relay', where each value is separated by a comma. Each specified value will output logs to a file named 'log.txt' located inside the 'meshcentral-data' folder. Setting it to '*' will output all logs."
         },
         "syslog": {
           "type": "string",
@@ -767,7 +808,7 @@
         },
         "webrtcConfig": {
           "type": "object",
-          "description": "The STUN servers used for WebRTC, if not specified the Google and Mozilla servers and used when the server is not in LAN mode.",
+          "description": "The STUN/TURN servers used for WebRTC, if not specified the Google and Cloudflare STUN servers are used when the server is not in LAN mode.",
           "properties": {
             "iceServers": {
               "type": "array",
@@ -776,7 +817,8 @@
                 "type": "object",
                 "properties": {
                   "urls": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "STUN/TURN URLs, examples are stun:stun3.l.google.com:19302 or turn:openrelay.metered.ca:443"
                   }
                 },
                 "required": [
@@ -818,8 +860,11 @@
           ]
         },
         "autoBackup": {
-          "type": "object",
-          "description": "Enable automatic backups of your meshcentral-data",
+          "type": [
+            "boolean",
+            "object"
+          ],
+          "description": "Enabled by default or if set to true. Disabled if set to false. An object can be provided with additional properties to set autobackup options.",
           "properties": {
             "mongoDumpPath": {
               "type": "string",
@@ -831,25 +876,66 @@
               "default": "mysqldump",
               "description": "The file path of where \"mysqldump\" is located. Default is \"mysqldump\""
             },
+            "pgDumpPath": {
+              "type": "string",
+              "default": "pg_dump",
+              "description": "The file path of where \"pg_dump\" is located. Default is \"pg_dump\""
+            },
             "backupIntervalHours": {
               "type": "integer",
               "default": 24,
               "description": "How often should the autobackup run in hours from the second meshcentral starts up? Default is every 24 hours"
+            },
+            "backupHour": {
+              "type": "integer",
+              "default": 0,
+              "description": "At which hour the autobackup should run. This forces a daily backup, overrules a custom 'backupIntervalHours'."
             },
             "keepLastDaysBackup": {
               "type": "integer",
               "default": 10,
               "description": "How many days of backups should the autobackup keep? Default is 10 Days worth"
             },
+            "zipCompression" : {
+              "type": "integer",
+              "default": "5",
+              "description": "Set the zip compression level, 1=fast/less small file to 9=slow/smallest file."
+            },
             "zipPassword": {
               "type": "string",
-              "default": null,
-              "description": "When specified, the ZIP backups will be password protected with the zipPassword"
+              "default": "",
+              "minLength": 1,
+              "description": "When specified, the ZIP backups will be password protected with the zipPassword and the password cannot be a blank value"
             },
             "backupPath": {
               "type": "string",
               "default": "meshcentral-backups",
               "description": "The file path where backup files are kept. The default is \"meshcentral-backups\" which sits next to \"meshcentral-data\"."
+            },
+            "backupName": {
+              "type": "string",
+              "default": "meshcentral-autobackup-",
+              "description": "The filename of the backupfile. The default is \"meshcentral-autobackup-\", the filename is appended with the time of backup."
+            },
+            "backupWebFolders": {
+              "type": "boolean",
+              "default": false,
+              "description": "Add views, public and emails directories if overridden"
+            },
+            "backupOtherFolders": {
+              "type": "boolean",
+              "default": false,
+              "description": "Also add files and recordings folder to the backup"
+            },
+            "backupIgnoreFilesGlob": {
+              "type": "array",
+              "default": [],
+              "description": "Glob for ignoring files in the data directory. For example [\"**/*.log\"] !! If a string instead of an array is passed, it will be split by ',' so *{.txt,.log} won't work in that case !! Don't do string..."
+            },
+            "backupSkipFoldersGlob":{
+              "type": "array",
+              "default": [],
+              "description": "Glob for ignoring directories in the data directory. For example [\"**/signedagents\"]"
             },
             "googleDrive": {
               "type": "object",
@@ -892,6 +978,54 @@
                   "type": "integer",
                   "default": null,
                   "description": "The maximum number of files to keep in the WebDAV folder, older files will be removed if needed."
+                }
+              }
+            },
+            "s3": {
+              "type": "object",
+              "description": "Enabled automated upload of the server backups to an S3 server.",
+              "required": [
+                "accessKey",
+                "secretKey",
+                "bucketName"
+              ],
+              "properties": {
+                "endpoint": {
+                  "type": "string",
+                  "default": "s3.amazonaws.com",
+                  "description": "S3 Endpoint address e.g. myS3.myserver.com"
+                },
+                "accessKey": {
+                  "type": "string",
+                  "description": "S3 accessKey, Required"
+                },
+                "secretKey": {
+                  "type": "string",
+                  "description": "S3 secretKey, Required"
+                },
+                "port": {
+                  "type": "integer",
+                  "default": 443,
+                  "description": "S3 Endpoint port number, Default is 443"
+                },
+                "ssl": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "If \"true\", the S3 Endpoint will use \"https\", else it will use \"http\", Default is true"
+                },
+                "bucketName": {
+                  "type": "string",
+                  "description": "S3 Bucket Name, Required"
+                },
+                "folderName": {
+                  "type": "string",
+                  "default": "MeshCentral-Backups",
+                  "description": "The name of the folder to create in the S3 Bucket. Defaults to \"MeshCentral-Backups\"."
+                },
+                "maxFiles": {
+                  "type": "integer",
+                  "default": 0,
+                  "description": "The maximum number of files to keep in the S3 folder, older files will be removed if needed. Default is 0 which is keep everything."
                 }
               }
             }
@@ -1000,6 +1134,24 @@
           "required": [
             "enabled"
           ]
+        },
+        "watchdog": {
+          "type": "object",
+          "required": [
+            "interval",
+            "timeout"
+          ],
+          "description": "This is used to monitor if NodeJS is servicing IO correctly or getting held up a lot. You MUST specify \"interval\" and \"timeout\".",
+          "properties": {
+            "interval": {
+              "type": "number",
+              "description": " This will check every X ms"
+            },
+            "timeout": {
+              "type": "number",
+              "description": " If the timer is more than X ms late, it will warn to console AND mesherrors.txt"
+            }
+          }
         }
       }
     },
@@ -1021,6 +1173,11 @@
             "default": 2,
             "description": "Valid numbers are 1 and 2, changes the style of the login page and some secondary pages."
           },
+          "showModernUIToggle": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true, the user will be able to toggle between the modern and classic UI."
+          },
           "title": {
             "type": "string",
             "default": "MeshCentral",
@@ -1041,6 +1198,11 @@
             "default": null,
             "description": "Web site .png logo file placed in meshcentral-data that used on the login page when sitestyle is 2."
           },
+          "pwaLogo": {
+            "type": "string",
+            "default": null,
+            "description": "Web site .png logo file that is 512x512 in size placed in meshcentral-data that is used for PWA installs on iOS and Android."
+          },
           "rootRedirect": {
             "type": "string",
             "default": null,
@@ -1050,6 +1212,11 @@
             "type": "boolean",
             "default": true,
             "description": "When set to false, this setting will disable the mobile site."
+          },
+          "orphanAgentUser": {
+            "type": "string",
+            "default": null,
+            "description": "If an agent attempts to connect to a unknown device group, automatically create a new device group and grant access to the specified user. Example: admin"
           },
           "maxDeviceView": {
             "type": "integer",
@@ -1515,6 +1682,11 @@
                 "default": true,
                 "description": "Set to false to disable SMS 2FA."
               },
+              "duo2factor": {
+                "type": "boolean",
+                "default": true,
+                "description": "Set to false to disable Duo 2FA."
+              },
               "push2factor": {
                 "type": "boolean",
                 "default": true,
@@ -1799,6 +1971,16 @@
                 "type": "boolean",
                 "default": false,
                 "description": "If true, user consent is accepted after the timeout."
+              },
+              "autoAcceptIfNoUser": {
+                "type": "boolean",
+                "default": false,
+                "description": "If true, user consent is accepted if no user is logged in."
+              },
+              "oldStyle": {
+                "type": "boolean",
+                "default": false,
+                "description": "If true, user consent will be shown in an old style prompt box rather than the new style consent-box."
               }
             }
           },
@@ -1998,6 +2180,11 @@
             "default": null,
             "description": "When set, idle users will be disconnected after a set amounts of minutes."
           },
+          "logoutOnIdleSessionTimeout": {
+            "type": "boolean",
+            "default": true,
+            "description": "Determines whether MeshCentral should logout after the session idle timeout elapsed or should just disconnect remote desktop, terminal and files."
+          },
           "userConsentFlags": {
             "type": "object",
             "description": "Use this section to require user consent for this domain.",
@@ -2107,7 +2294,7 @@
                   "login"
                 ],
                 "default": "any",
-                "description": "Indicate what terminal options are available when the user clicks the right mouse button on the terminal connect button."
+                "description": "Indicates the default linux terminal thats used when the user clicks the terminal connect button and disables the right mouse button on the terminal connect button when this is set."
               },
               "launchCommand": {
                 "type": "object",
@@ -2156,12 +2343,12 @@
               "TlsConnections": {
                 "type": "boolean",
                 "default": true,
-                "description": "When set to false, MeshCentral will use TLS to connect to Intel AMT, this is not recommended."
+                "description": "When set to false, MeshCentral will NOT use TLS to connect to Intel AMT, this is not recommended."
               },
               "TlsAcmActivation": {
                 "type": "boolean",
                 "default": false,
-                "description": "When set to false, MeshCentral will not attempt a TLS ACM activation on Intel AMT v14+"
+                "description": "When set to true, MeshCentral will attempt a TLS ACM activation on Intel AMT v14+"
               },
               "AdminAccounts": {
                 "description": "List of username and passwords to try when connecting to Intel AMT.",
@@ -2530,6 +2717,26 @@
             },
             "description": "This is used to create HTTP redirections. For example setting \"redirects\": { \"example\":\"https://example.com\" } will make it so that anyone accessing /example on the server will get redirected to the specified URL."
           },
+          "duo2factor": {
+            "type": "object",
+            "properties": {
+              "integrationkey": {
+                "type": "string",
+                "default": "",
+                "description": "Integration key from Duo"
+              },
+              "secretkey": {
+                "type": "string",
+                "default": "",
+                "description": "Secret key from Duo"
+              },
+              "apihostname": {
+                "type": "string",
+                "default": "",
+                "description": "API Hostname from Duo"
+              }
+            }
+          },
           "yubikey": {
             "type": "object",
             "properties": {
@@ -2708,12 +2915,10 @@
               },
               "user": {
                 "type": "string",
-                "format": "string",
                 "description": "SMTP username."
               },
               "pass": {
                 "type": "string",
-                "format": "string",
                 "description": "SMTP password."
               },
               "tls": {
@@ -3066,7 +3271,6 @@
                     ]
                   }
                 ],
-                "additionalProperties": false,
                 "properties": {
                   "newAccounts": {
                     "type": "boolean",
@@ -3274,8 +3478,7 @@
                     "required": [
                       "client_id",
                       "client_secret"
-                    ],
-                    "additionalProperties": false
+                    ]
                   },
                   "issuer": {
                     "type": [
@@ -3365,8 +3568,7 @@
                           }
                         }
                       }
-                    },
-                    "additionalProperties": false
+                    }
                   },
                   "custom": {
                     "type": "object",
@@ -3417,8 +3619,7 @@
                         "type": "string",
                         "description": "REQUIRED IF USING GROUPS: Customer ID from Google Workspace Admin Console (https://admin.google.com/ac/accountsettings/profile)"
                       }
-                    },
-                    "additionalProperties": false
+                    }
                   },
                   "groups": {
                     "type": "object",
@@ -3470,8 +3671,7 @@
                         "default": "groups",
                         "description": "Custom claim to use."
                       }
-                    },
-                    "additionalProperties": false
+                    }
                   }
                 }
               }
@@ -3536,8 +3736,7 @@
               "description": "EAB HMAC KEY",
               "default": ""
             }
-          },
-          "additionalProperties": false
+          }
         }
       },
       "required": [
@@ -3632,12 +3831,10 @@
         },
         "user": {
           "type": "string",
-          "format": "string",
           "description": "SMTP username."
         },
         "pass": {
           "type": "string",
-          "format": "string",
           "description": "SMTP password."
         },
         "tls": {

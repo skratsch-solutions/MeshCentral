@@ -655,33 +655,39 @@ var meshCoreObj = { action: 'coreinfo', value: (require('MeshAgent').coreHash ? 
 try { require('os').name().then(function (v) { meshCoreObj.osdesc = v; meshCoreObjChanged(); }); } catch (ex) { }
 
 // Setup logged in user monitoring (THIS IS BROKEN IN WIN7)
+function onUserSessionChanged(user, locked) {
+    userSession.enumerateUsers().then(function (users) {
+        if (process.platform == 'linux') {
+            if (userSession._startTime == null) {
+                userSession._startTime = Date.now();
+                userSession._count = users.length;
+            }
+            else if (Date.now() - userSession._startTime < 10000 && users.length == userSession._count) {
+                userSession.removeAllListeners('changed');
+                return;
+            }
+        }
+
+        var u = [], a = users.Active;
+        if(meshCoreObj.lusers == null) { meshCoreObj.lusers = []; }
+        for (var i = 0; i < a.length; i++) {
+            var un = a[i].Domain ? (a[i].Domain + '\\' + a[i].Username) : (a[i].Username);
+            if (user && locked && (JSON.stringify(a[i]) === JSON.stringify(user))) { if (meshCoreObj.lusers.indexOf(un) == -1) { meshCoreObj.lusers.push(un); } }
+            else if (user && !locked && (JSON.stringify(a[i]) === JSON.stringify(user))) { meshCoreObj.lusers.splice(meshCoreObj.lusers.indexOf(un), 1); }
+            if (u.indexOf(un) == -1) { u.push(un); } // Only push users in the list once.
+        }
+        meshCoreObj.lusers = meshCoreObj.lusers;
+        meshCoreObj.users = u;
+        meshCoreObjChanged();
+    });
+}
+
 try {
     var userSession = require('user-sessions');
-    userSession.on('changed', function onUserSessionChanged() {
-        userSession.enumerateUsers().then(function (users) {
-            if (process.platform == 'linux') {
-                if (userSession._startTime == null) {
-                    userSession._startTime = Date.now();
-                    userSession._count = users.length;
-                }
-                else if (Date.now() - userSession._startTime < 10000 && users.length == userSession._count) {
-                    userSession.removeAllListeners('changed');
-                    return;
-                }
-            }
-
-            var u = [], a = users.Active;
-            for (var i = 0; i < a.length; i++) {
-                var un = a[i].Domain ? (a[i].Domain + '\\' + a[i].Username) : (a[i].Username);
-                if (u.indexOf(un) == -1) { u.push(un); } // Only push users in the list once.
-            }
-            meshCoreObj.users = u;
-            meshCoreObjChanged();
-        });
-    });
+    userSession.on('changed', function () { onUserSessionChanged(null, false); });
     userSession.emit('changed');
-    //userSession.on('locked', function (user) { sendConsoleText('[' + (user.Domain ? user.Domain + '\\' : '') + user.Username + '] has LOCKED the desktop'); });
-    //userSession.on('unlocked', function (user) { sendConsoleText('[' + (user.Domain ? user.Domain + '\\' : '') + user.Username + '] has UNLOCKED the desktop'); });
+    userSession.on('locked', function (user) { if(user != undefined && user != null) { onUserSessionChanged(user, true); } });
+    userSession.on('unlocked', function (user) { if(user != undefined && user != null) { onUserSessionChanged(user, false); } });
 } catch (ex) { }
 
 var meshServerConnectionState = 0;
@@ -1158,6 +1164,8 @@ function handleServerCommand(data) {
                                 tunnel.soptions = data.soptions;
                                 tunnel.consentTimeout = (tunnel.soptions && tunnel.soptions.consentTimeout) ? tunnel.soptions.consentTimeout : 30;
                                 tunnel.consentAutoAccept = (tunnel.soptions && (tunnel.soptions.consentAutoAccept === true));
+                                tunnel.consentAutoAcceptIfNoUser = (tunnel.soptions && (tunnel.soptions.consentAutoAcceptIfNoUser === true));
+                                tunnel.oldStyle = (tunnel.soptions && tunnel.soptions.oldStyle) ? tunnel.soptions.oldStyle : false;
                                 tunnel.tcpaddr = data.tcpaddr;
                                 tunnel.tcpport = data.tcpport;
                                 tunnel.udpaddr = data.udpaddr;
@@ -1935,21 +1943,15 @@ function getSystemInformation(func) {
         if (process.platform == 'win32')
         {
             results.pendingReboot = require('win-info').pendingReboot(); // Pending reboot
-            if (require('computer-identifiers').volumes_promise != null)
+            if (require('win-volumes').volumes_promise != null)
             {
-                var p = require('computer-identifiers').volumes_promise();
+                var p = require('win-volumes').volumes_promise();
                 p.then(function (res)
                 {
                     results.hardware.windows.volumes = cleanGetBitLockerVolumeInfo(res);
                     results.hash = hasher.syncHash(JSON.stringify(results)).toString('hex');
                     func(results);
                 });
-            }
-            else if (require('computer-identifiers').volumes != null)
-            {
-                results.hardware.windows.volumes = cleanGetBitLockerVolumeInfo(require('computer-identifiers').volumes());
-                results.hash = hasher.syncHash(JSON.stringify(results)).toString('hex');
-                func(results);
             }
             else
             {
@@ -2302,6 +2304,59 @@ function terminal_end()
 
 }
 
+function terminal_consent_ask(ws) {
+    ws.write(JSON.stringify({ ctrlChannel: '102938', type: 'console', msg: "Waiting for user to grant access...", msgid: 1 }));
+    var consentMessage = currentTranslation['terminalConsent'].replace('{0}', ws.httprequest.realname).replace('{1}', ws.httprequest.username);
+    var consentTitle = 'MeshCentral';
+    if (ws.httprequest.soptions != null) {
+        if (ws.httprequest.soptions.consentTitle != null) { consentTitle = ws.httprequest.soptions.consentTitle; }
+        if (ws.httprequest.soptions.consentMsgTerminal != null) { consentMessage = ws.httprequest.soptions.consentMsgTerminal.replace('{0}', ws.httprequest.realname).replace('{1}', ws.httprequest.username); }
+    }
+    if (process.platform == 'win32') {
+        var enhanced = false;
+        if (ws.httprequest.oldStyle === false) {
+            try { require('win-userconsent'); enhanced = true; } catch (ex) { }
+        }
+        if (enhanced) {
+            var ipr = server_getUserImage(ws.httprequest.userid);
+            ipr.consentTitle = consentTitle;
+            ipr.consentMessage = consentMessage;
+            ipr.consentTimeout = ws.httprequest.consentTimeout;
+            ipr.consentAutoAccept = ws.httprequest.consentAutoAccept;
+            ipr.username = ws.httprequest.realname;
+            ipr.tsid = ws.tsid;
+            ipr.translations = { Allow: currentTranslation['allow'], Deny: currentTranslation['deny'], Auto: currentTranslation['autoAllowForFive'], Caption: consentMessage };
+            ws.httprequest.tpromise._consent = ipr.then(function (img) {
+                this.consent = require('win-userconsent').create(this.consentTitle, this.consentMessage, this.username, { b64Image: img.split(',').pop(), uid: this.tsid, timeout: this.consentTimeout * 1000, timeoutAutoAccept: this.consentAutoAccept, translations: this.translations, background: color_options.background, foreground: color_options.foreground });
+                this.__childPromise.close = this.consent.close.bind(this.consent);
+                return (this.consent);
+            });
+        } else {
+            ws.httprequest.tpromise._consent = require('message-box').create(consentTitle, consentMessage, ws.httprequest.consentTimeout);
+        }
+    } else {
+        ws.httprequest.tpromise._consent = require('message-box').create(consentTitle, consentMessage, ws.httprequest.consentTimeout);
+    }
+    ws.httprequest.tpromise._consent.retPromise = ws.httprequest.tpromise;
+    ws.httprequest.tpromise._consent.then(function (always) {
+        if (always && process.platform == 'win32') { server_set_consentTimer(this.retPromise.httprequest.userid); }
+        // Success
+        MeshServerLogEx(27, null, "Local user accepted remote terminal request (" + this.retPromise.httprequest.remoteaddr + ")", this.retPromise.that.httprequest);
+        this.retPromise.that.write(JSON.stringify({ ctrlChannel: '102938', type: 'console', msg: null, msgid: 0 }));
+        this.retPromise._consent = null;
+        this.retPromise._res();
+    }, function (e) {
+        if (this.retPromise.that) {
+            if(this.retPromise.that.httprequest){ // User Consent Denied
+                MeshServerLogEx(28, null, "Local user rejected remote terminal request (" + this.retPromise.that.httprequest.remoteaddr + ")", this.retPromise.that.httprequest);
+            } else { } // Connection was closed server side, maybe log some messages somewhere?
+            this.retPromise._consent = null;
+            this.retPromise.that.write(JSON.stringify({ ctrlChannel: '102938', type: 'console', msg: e.toString(), msgid: 2 }));
+        } else { } // no websocket, maybe log some messages somewhere?
+        this.retPromise._rej(e.toString());
+    });
+}
+
 function terminal_promise_connection_rejected(e)
 {
     // FAILED to connect terminal
@@ -2614,13 +2669,111 @@ function kvm_tunnel_consentpromise_closehandler()
     if (this._consentpromise && this._consentpromise.close) { this._consentpromise.close(); }
 }
 
+function kvm_consent_ok(ws) {
+    // User Consent Prompt is not required because no user is present
+    if (ws.httprequest.consent && (ws.httprequest.consent & 1)){
+        // User Notifications is required
+        MeshServerLogEx(35, null, "Started remote desktop with toast notification (" + ws.httprequest.remoteaddr + ")", ws.httprequest);
+        var notifyMessage = currentTranslation['desktopNotify'].replace('{0}', ws.httprequest.realname);
+        var notifyTitle = "MeshCentral";
+        if (ws.httprequest.soptions != null) {
+            if (ws.httprequest.soptions.notifyTitle != null) { notifyTitle = ws.httprequest.soptions.notifyTitle; }
+            if (ws.httprequest.soptions.notifyMsgDesktop != null) { notifyMessage = ws.httprequest.soptions.notifyMsgDesktop.replace('{0}', ws.httprequest.realname).replace('{1}', ws.httprequest.username); }
+        }
+        try { require('toaster').Toast(notifyTitle, notifyMessage, ws.tsid); } catch (ex) { }
+    } else {
+        MeshServerLogEx(36, null, "Started remote desktop without notification (" + ws.httprequest.remoteaddr + ")", ws.httprequest);
+    }
+    if (ws.httprequest.consent && (ws.httprequest.consent & 0x40)) {
+        // Connection Bar is required
+        if (ws.httprequest.desktop.kvm.connectionBar) {
+            ws.httprequest.desktop.kvm.connectionBar.removeAllListeners('close');
+            ws.httprequest.desktop.kvm.connectionBar.close();
+        }
+        try {
+            ws.httprequest.desktop.kvm.connectionBar = require('notifybar-desktop')(ws.httprequest.privacybartext.replace('{0}', ws.httprequest.desktop.kvm.rusers.join(', ')).replace('{1}', ws.httprequest.desktop.kvm.users.join(', ')).replace(/'/g, "\\'\\"), require('MeshAgent')._tsid, color_options);
+            MeshServerLogEx(31, null, "Remote Desktop Connection Bar Activated/Updated (" + ws.httprequest.remoteaddr + ")", ws.httprequest);
+        } catch (ex) {
+            MeshServerLogEx(32, null, "Remote Desktop Connection Bar Failed or not Supported (" + ws.httprequest.remoteaddr + ")", ws.httprequest);
+        }
+        if (ws.httprequest.desktop.kvm.connectionBar) {
+            ws.httprequest.desktop.kvm.connectionBar.state = {
+                userid: ws.httprequest.userid,
+                xuserid: ws.httprequest.xuserid,
+                username: ws.httprequest.username,
+                sessionid: ws.httprequest.sessionid,
+                remoteaddr: ws.httprequest.remoteaddr,
+                guestname: ws.httprequest.guestname,
+                desktop: ws.httprequest.desktop
+            };
+            ws.httprequest.desktop.kvm.connectionBar.on('close', function () {
+                console.info1('Connection Bar Forcefully closed');
+                MeshServerLogEx(29, null, "Remote Desktop Connection forcefully closed by local user (" + this.state.remoteaddr + ")", this.state);
+                for (var i in this.state.desktop.kvm._pipedStreams) {
+                    this.state.desktop.kvm._pipedStreams[i].end();
+                }
+                this.state.desktop.kvm.end();
+            });
+        }
+    }
+    ws.httprequest.desktop.kvm.pipe(ws, { dataTypeSkip: 1 });
+    if (ws.httprequest.autolock) {
+        destopLockHelper_pipe(ws.httprequest);
+    }
+}
+
+function kvm_consent_ask(ws){
+    // Send a console message back using the console channel, "\n" is supported.
+    ws.write(JSON.stringify({ ctrlChannel: '102938', type: 'console', msg: "Waiting for user to grant access...", msgid: 1 }));
+    var consentMessage = currentTranslation['desktopConsent'].replace('{0}', ws.httprequest.realname).replace('{1}', ws.httprequest.username);
+    var consentTitle = 'MeshCentral';
+    if (ws.httprequest.soptions != null) {
+        if (ws.httprequest.soptions.consentTitle != null) { consentTitle = ws.httprequest.soptions.consentTitle; }
+        if (ws.httprequest.soptions.consentMsgDesktop != null) { consentMessage = ws.httprequest.soptions.consentMsgDesktop.replace('{0}', ws.httprequest.realname).replace('{1}', ws.httprequest.username); }
+    }
+    var pr;
+    if (process.platform == 'win32') {
+        var enhanced = false;
+        if (ws.httprequest.oldStyle === false) {
+            try { require('win-userconsent'); enhanced = true; } catch (ex) { }
+        }
+        if (enhanced) {
+            var ipr = server_getUserImage(ws.httprequest.userid);
+            ipr.consentTitle = consentTitle;
+            ipr.consentMessage = consentMessage;
+            ipr.consentTimeout = ws.httprequest.consentTimeout;
+            ipr.consentAutoAccept = ws.httprequest.consentAutoAccept;
+            ipr.tsid = ws.tsid;
+            ipr.username = ws.httprequest.realname;
+            ipr.translation = { Allow: currentTranslation['allow'], Deny: currentTranslation['deny'], Auto: currentTranslation['autoAllowForFive'], Caption: consentMessage };
+            pr = ipr.then(function (img) {
+                this.consent = require('win-userconsent').create(this.consentTitle, this.consentMessage, this.username, { b64Image: img.split(',').pop(), uid: this.tsid, timeout: this.consentTimeout * 1000, timeoutAutoAccept: this.consentAutoAccept, translations: this.translation, background: color_options.background, foreground: color_options.foreground });
+                this.__childPromise.close = this.consent.close.bind(this.consent);
+                return (this.consent);
+            });
+        } else {
+            pr = require('message-box').create(consentTitle, consentMessage, ws.httprequest.consentTimeout, null, this.tsid);
+        }
+    } else {
+        pr = require('message-box').create(consentTitle, consentMessage, ws.httprequest.consentTimeout, null, this.tsid);
+    }
+    pr.ws = ws;
+    ws.pause();
+    ws._consentpromise = pr;
+    ws.prependOnceListener('end', kvm_tunnel_consentpromise_closehandler);
+    pr.then(kvm_consentpromise_resolved, kvm_consentpromise_rejected);
+}
+
 function kvm_consentpromise_rejected(e)
 {
-    // User Consent Denied/Failed
-    this.ws._consentpromise = null;
-    MeshServerLogEx(34, null, "Failed to start remote desktop after local user rejected (" + this.ws.httprequest.remoteaddr + ")", this.ws.httprequest);
-    this.ws.end(JSON.stringify({ ctrlChannel: '102938', type: 'console', msg: e.toString(), msgid: 2 }));
-    this.ws = null;
+    if (this.ws) {
+        if(this.ws.httprequest){ // User Consent Denied
+            MeshServerLogEx(34, null, "Failed to start remote desktop after local user rejected (" + this.ws.httprequest.remoteaddr + ")", this.ws.httprequest);
+        } else { } // Connection was closed server side, maybe log some messages somewhere?
+        this.ws._consentpromise = null;
+        this.ws.end(JSON.stringify({ ctrlChannel: '102938', type: 'console', msg: e.toString(), msgid: 2 }));
+        this.ws = null;
+    } else { } // no websocket, maybe log some messages somewhere?
 }
 function kvm_consentpromise_resolved(always)
 {
@@ -2690,6 +2843,67 @@ function kvm_consentpromise_resolved(always)
     this.ws = null;
 }
 
+function files_consent_ok(ws){
+    // User Consent Prompt is not required
+    if (ws.httprequest.consent && (ws.httprequest.consent & 4)) {
+        // User Notifications is required
+        MeshServerLogEx(42, null, "Started remote files with toast notification (" + ws.httprequest.remoteaddr + ")", ws.httprequest);
+        var notifyMessage = currentTranslation['fileNotify'].replace('{0}', ws.httprequest.realname);
+        var notifyTitle = "MeshCentral";
+        if (ws.httprequest.soptions != null) {
+            if (ws.httprequest.soptions.notifyTitle != null) { notifyTitle = ws.httprequest.soptions.notifyTitle; }
+            if (ws.httprequest.soptions.notifyMsgFiles != null) { notifyMessage = ws.httprequest.soptions.notifyMsgFiles.replace('{0}', ws.httprequest.realname).replace('{1}', ws.httprequest.username); }
+        }
+        try { require('toaster').Toast(notifyTitle, notifyMessage); } catch (ex) { }
+    } else {
+        MeshServerLogEx(43, null, "Started remote files without notification (" + ws.httprequest.remoteaddr + ")", ws.httprequest);
+    }
+    ws.resume();
+}
+
+function files_consent_ask(ws){
+    // Send a console message back using the console channel, "\n" is supported.
+    ws.write(JSON.stringify({ ctrlChannel: '102938', type: 'console', msg: "Waiting for user to grant access...", msgid: 1 }));
+    var consentMessage = currentTranslation['fileConsent'].replace('{0}', ws.httprequest.realname).replace('{1}', ws.httprequest.username);
+    var consentTitle = 'MeshCentral';
+
+    if (ws.httprequest.soptions != null) {
+        if (ws.httprequest.soptions.consentTitle != null) { consentTitle = ws.httprequest.soptions.consentTitle; }
+        if (ws.httprequest.soptions.consentMsgFiles != null) { consentMessage = ws.httprequest.soptions.consentMsgFiles.replace('{0}', ws.httprequest.realname).replace('{1}', ws.httprequest.username); }
+    }
+    var pr;
+    if (process.platform == 'win32') {
+        var enhanced = false;
+        if (ws.httprequest.oldStyle === false) {
+            try { require('win-userconsent'); enhanced = true; } catch (ex) { }
+        }
+        if (enhanced) {
+            var ipr = server_getUserImage(ws.httprequest.userid);
+            ipr.consentTitle = consentTitle;
+            ipr.consentMessage = consentMessage;
+            ipr.consentTimeout = ws.httprequest.consentTimeout;
+            ipr.consentAutoAccept = ws.httprequest.consentAutoAccept;
+            ipr.username = ws.httprequest.realname;
+            ipr.tsid = ws.tsid;
+            ipr.translations = { Allow: currentTranslation['allow'], Deny: currentTranslation['deny'], Auto: currentTranslation['autoAllowForFive'], Caption: consentMessage };
+            pr = ipr.then(function (img) {
+                this.consent = require('win-userconsent').create(this.consentTitle, this.consentMessage, this.username, { b64Image: img.split(',').pop(), uid: this.tsid, timeout: this.consentTimeout * 1000, timeoutAutoAccept: this.consentAutoAccept, translations: this.translations, background: color_options.background, foreground: color_options.foreground });
+                this.__childPromise.close = this.consent.close.bind(this.consent);
+                return (this.consent);
+            });
+        } else {
+            pr = require('message-box').create(consentTitle, consentMessage, ws.httprequest.consentTimeout, null);
+        }
+    } else {
+        pr = require('message-box').create(consentTitle, consentMessage, ws.httprequest.consentTimeout, null);
+    }
+    pr.ws = ws;
+    ws.pause();
+    ws._consentpromise = pr;
+    ws.prependOnceListener('end', files_tunnel_endhandler);
+    pr.then(files_consentpromise_resolved, files_consentpromise_rejected);
+}
+
 function files_consentpromise_resolved(always)
 {
     if (always && process.platform == 'win32') { server_set_consentTimer(this.ws.httprequest.userid); }
@@ -2715,11 +2929,14 @@ function files_consentpromise_resolved(always)
 }
 function files_consentpromise_rejected(e)
 {
-    // User Consent Denied/Failed
-    this.ws._consentpromise = null;
-    MeshServerLogEx(41, null, "Failed to start remote files after local user rejected (" + this.ws.httprequest.remoteaddr + ")", this.ws.httprequest);
-    this.ws.end(JSON.stringify({ ctrlChannel: '102938', type: 'console', msg: e.toString(), msgid: 2 }));
-    this.ws = null;
+    if (this.ws) {
+        if(this.ws.httprequest){ // User Consent Denied
+            MeshServerLogEx(41, null, "Failed to start remote files after local user rejected (" + this.ws.httprequest.remoteaddr + ")", this.ws.httprequest);
+        } else { } // Connection was closed server side, maybe log some messages somewhere?
+        this.ws._consentpromise = null;
+        this.ws.end(JSON.stringify({ ctrlChannel: '102938', type: 'console', msg: e.toString(), msgid: 2 }));
+        this.ws = null;
+    } else { } // no websocket, maybe log some messages somewhere?
 }
 function files_tunnel_endhandler()
 {
@@ -2800,6 +3017,12 @@ function onTunnelData(data)
 
                 this.descriptorMetadata = "Remote Terminal";
 
+                // Look for a TSID
+                var tsid = null;
+                if ((this.httprequest.xoptions != null) && (typeof this.httprequest.xoptions.tsid == 'number')) { tsid = this.httprequest.xoptions.tsid; }
+                require('MeshAgent')._tsid = tsid;
+                this.tsid = tsid;
+
                 if (process.platform == 'win32')
                 {
                     if (!require('win-terminal').PowerShellCapable() && (this.httprequest.protocol == 6 || this.httprequest.protocol == 9)) {
@@ -2816,71 +3039,31 @@ function onTunnelData(data)
                 this.end = terminal_end;
 
                 // Perform User-Consent if needed. 
-                if (this.httprequest.consent && (this.httprequest.consent & 16))
-                {
-                    this.write(JSON.stringify({ ctrlChannel: '102938', type: 'console', msg: "Waiting for user to grant access...", msgid: 1 }));
-                    var consentMessage = currentTranslation['terminalConsent'].replace('{0}', this.httprequest.realname).replace('{1}', this.httprequest.username);
-                    var consentTitle = 'MeshCentral';
-
-                    if (this.httprequest.soptions != null)
-                    {
-                        if (this.httprequest.soptions.consentTitle != null) { consentTitle = this.httprequest.soptions.consentTitle; }
-                        if (this.httprequest.soptions.consentMsgTerminal != null) { consentMessage = this.httprequest.soptions.consentMsgTerminal.replace('{0}', this.httprequest.realname).replace('{1}', this.httprequest.username); }
-                    }
-                    if (process.platform == 'win32')
-                    {
-                        var enhanced = false;
-                        try { require('win-userconsent'); enhanced = true; } catch (ex) { }
-                        if (enhanced)
-                        {
-                            var ipr = server_getUserImage(this.httprequest.userid);
-                            ipr.consentTitle = consentTitle;
-                            ipr.consentMessage = consentMessage;
-                            ipr.consentTimeout = this.httprequest.consentTimeout;
-                            ipr.consentAutoAccept = this.httprequest.consentAutoAccept;
-                            ipr.username = this.httprequest.realname;
-                            ipr.translations = { Allow: currentTranslation['allow'], Deny: currentTranslation['deny'], Auto: currentTranslation['autoAllowForFive'], Caption: consentMessage };
-                            this.httprequest.tpromise._consent = ipr.then(function (img)
-                            {
-                                this.consent = require('win-userconsent').create(this.consentTitle, this.consentMessage, this.username, { b64Image: img.split(',').pop(), timeout: this.consentTimeout * 1000, timeoutAutoAccept: this.consentAutoAccept, translations: this.translations, background: color_options.background, foreground: color_options.foreground });
-                                this.__childPromise.close = this.consent.close.bind(this.consent);
-                                return (this.consent);
-                            });
-                        } else
-                        {
-                            this.httprequest.tpromise._consent = require('message-box').create(consentTitle, consentMessage, this.httprequest.consentTimeout);
-                        }
-                    } else
-                    {
-                        this.httprequest.tpromise._consent = require('message-box').create(consentTitle, consentMessage, this.httprequest.consentTimeout);
-                    }
-                    this.httprequest.tpromise._consent.retPromise = this.httprequest.tpromise;
-                    this.httprequest.tpromise._consent.then(
-                        function (always)
-                        {
-                            if (always && process.platform == 'win32') { server_set_consentTimer(this.retPromise.httprequest.userid); }
-
-                            // Success
-                            MeshServerLogEx(27, null, "Local user accepted remote terminal request (" + this.retPromise.httprequest.remoteaddr + ")", this.retPromise.that.httprequest);
-                            this.retPromise.that.write(JSON.stringify({ ctrlChannel: '102938', type: 'console', msg: null, msgid: 0 }));
-                            this.retPromise._consent = null;
-                            this.retPromise._res();
-                        },
-                        function (e) {
-                            // Denied
-                            MeshServerLogEx(28, null, "Local user rejected remote terminal request (" + this.retPromise.that.httprequest.remoteaddr + ")", this.retPromise.that.httprequest);
-                            this.retPromise.that.write(JSON.stringify({ ctrlChannel: '102938', type: 'console', msg: e.toString(), msgid: 2 }));
-                            this.retPromise._consent = null;
-                            this.retPromise._rej(e.toString());
+                if (this.httprequest.consent && (this.httprequest.consent & 16)) {
+                    // User asked for consent so now we check if we can auto accept if no user is present/loggedin
+                    if (this.httprequest.consentAutoAcceptIfNoUser) {
+                        var p = require('user-sessions').enumerateUsers();
+                        p.sessionid = this.httprequest.sessionid;
+                        p.ws = this;
+                        p.then(function (u) {
+                            var v = [];
+                            for (var i in u) {
+                                if (u[i].State == 'Active') { v.push({ tsid: i, type: u[i].StationName, user: u[i].Username, domain: u[i].Domain }); }
+                            }
+                            if (v.length == 0) { // No user is present, auto accept
+                                this.ws.httprequest.tpromise._res();
+                            } else { 
+                                // User is present so we still need consent
+                                terminal_consent_ask(this.ws);
+                            }
                         });
-                }
-                else
-                {
+                    } else {
+                        terminal_consent_ask(this);
+                    }
+                } else {
                     // User-Consent is not required, so just resolve this promise
                     this.httprequest.tpromise._res();
                 }
-
-
                 this.httprequest.tpromise.then(terminal_promise_consent_resolved, terminal_promise_consent_rejected);
             }
             else if (this.httprequest.protocol == 2)
@@ -2904,6 +3087,7 @@ function onTunnelData(data)
                 var tsid = null;
                 if ((this.httprequest.xoptions != null) && (typeof this.httprequest.xoptions.tsid == 'number')) { tsid = this.httprequest.xoptions.tsid; }
                 require('MeshAgent')._tsid = tsid;
+                this.tsid = tsid;
 
                 // If MacOS, Wake up device with caffeinate
                 if(process.platform == 'darwin'){
@@ -2975,117 +3159,33 @@ function onTunnelData(data)
                 }
 
                 // Perform notification if needed. Toast messages may not be supported on all platforms.
-                if (this.httprequest.consent && (this.httprequest.consent & 8))
-                {
-                    // User Consent Prompt is required
-                    // Send a console message back using the console channel, "\n" is supported.
-                    this.write(JSON.stringify({ ctrlChannel: '102938', type: 'console', msg: "Waiting for user to grant access...", msgid: 1 }));
-                    var consentMessage = currentTranslation['desktopConsent'].replace('{0}', this.httprequest.realname).replace('{1}', this.httprequest.username);
-                    var consentTitle = 'MeshCentral';
-                    if (this.httprequest.soptions != null)
-                    {
-                        if (this.httprequest.soptions.consentTitle != null) { consentTitle = this.httprequest.soptions.consentTitle; }
-                        if (this.httprequest.soptions.consentMsgDesktop != null) { consentMessage = this.httprequest.soptions.consentMsgDesktop.replace('{0}', this.httprequest.realname).replace('{1}', this.httprequest.username); }
+                if (this.httprequest.consent && (this.httprequest.consent & 8)) {
+
+                    // User asked for consent but now we check if can auto accept if no user is present
+                    if (this.httprequest.consentAutoAcceptIfNoUser) {
+                        // Get list of users to check if we any actual users logged in, and if users logged in, we still need consent
+                        var p = require('user-sessions').enumerateUsers();
+                        p.sessionid = this.httprequest.sessionid;
+                        p.ws = this;
+                        p.then(function (u) {
+                            var v = [];
+                            for (var i in u) {
+                                if (u[i].State == 'Active') { v.push({ tsid: i, type: u[i].StationName, user: u[i].Username, domain: u[i].Domain }); }
+                            }
+                            if (v.length == 0) { // No user is present, auto accept
+                                kvm_consent_ok(this.ws);
+                            } else { 
+                                // User is present so we still need consent
+                                kvm_consent_ask(this.ws);
+                            }
+                        });
+                    } else {
+                        // User Consent Prompt is required
+                        kvm_consent_ask(this);
                     }
-                    var pr;
-                    if (process.platform == 'win32')
-                    {
-                        var enhanced = false;
-                        try { require('win-userconsent'); enhanced = true; } catch (ex) { }
-                        if (enhanced)
-                        {
-                            var ipr = server_getUserImage(this.httprequest.userid);
-                            ipr.consentTitle = consentTitle;
-                            ipr.consentMessage = consentMessage;
-                            ipr.consentTimeout = this.httprequest.consentTimeout;
-                            ipr.consentAutoAccept = this.httprequest.consentAutoAccept;
-                            ipr.tsid = tsid;
-                            ipr.username = this.httprequest.realname;
-                            ipr.translation = { Allow: currentTranslation['allow'], Deny: currentTranslation['deny'], Auto: currentTranslation['autoAllowForFive'], Caption: consentMessage };
-                            pr = ipr.then(function (img)
-                            {
-                                this.consent = require('win-userconsent').create(this.consentTitle, this.consentMessage, this.username, { b64Image: img.split(',').pop(), uid: this.tsid, timeout: this.consentTimeout * 1000, timeoutAutoAccept: this.consentAutoAccept, translations: this.translation, background: color_options.background, foreground: color_options.foreground });
-                                this.__childPromise.close = this.consent.close.bind(this.consent);
-                                return (this.consent);
-                            });
-                        }
-                        else
-                        {
-                            pr = require('message-box').create(consentTitle, consentMessage, this.httprequest.consentTimeout, null, tsid);
-                        }
-                    }
-                    else
-                    {
-                        pr = require('message-box').create(consentTitle, consentMessage, this.httprequest.consentTimeout, null, tsid);
-                    }
-                    pr.ws = this;
-                    this.pause();
-                    this._consentpromise = pr;
-                    this.prependOnceListener('end', kvm_tunnel_consentpromise_closehandler);
-                    pr.then(kvm_consentpromise_resolved, kvm_consentpromise_rejected);
-                }
-                else
-                {
+                } else {
                     // User Consent Prompt is not required
-                    if (this.httprequest.consent && (this.httprequest.consent & 1))
-                    {
-                        // User Notifications is required
-                        MeshServerLogEx(35, null, "Started remote desktop with toast notification (" + this.httprequest.remoteaddr + ")", this.httprequest);
-                        var notifyMessage = currentTranslation['desktopNotify'].replace('{0}', this.httprequest.realname);
-                        var notifyTitle = "MeshCentral";
-                        if (this.httprequest.soptions != null) {
-                            if (this.httprequest.soptions.notifyTitle != null) { notifyTitle = this.httprequest.soptions.notifyTitle; }
-                            if (this.httprequest.soptions.notifyMsgDesktop != null) { notifyMessage = this.httprequest.soptions.notifyMsgDesktop.replace('{0}', this.httprequest.realname).replace('{1}', this.httprequest.username); }
-                        }
-                        try { require('toaster').Toast(notifyTitle, notifyMessage, tsid); } catch (ex) { }
-                    } else
-                    {
-                        MeshServerLogEx(36, null, "Started remote desktop without notification (" + this.httprequest.remoteaddr + ")", this.httprequest);
-                    }
-                    if (this.httprequest.consent && (this.httprequest.consent & 0x40))
-                    {
-                        // Connection Bar is required
-                        if (this.httprequest.desktop.kvm.connectionBar)
-                        {
-                            this.httprequest.desktop.kvm.connectionBar.removeAllListeners('close');
-                            this.httprequest.desktop.kvm.connectionBar.close();
-                        }
-                        try
-                        {
-                            this.httprequest.desktop.kvm.connectionBar = require('notifybar-desktop')(this.httprequest.privacybartext.replace('{0}', this.httprequest.desktop.kvm.rusers.join(', ')).replace('{1}', this.httprequest.desktop.kvm.users.join(', ')).replace(/'/g, "\\'\\"), require('MeshAgent')._tsid, color_options);
-                            MeshServerLogEx(31, null, "Remote Desktop Connection Bar Activated/Updated (" + this.httprequest.remoteaddr + ")", this.httprequest);
-                        } catch (ex) {
-                            MeshServerLogEx(32, null, "Remote Desktop Connection Bar Failed or not Supported (" + this.httprequest.remoteaddr + ")", this.httprequest);
-                        }
-                        if (this.httprequest.desktop.kvm.connectionBar)
-                        {
-                            this.httprequest.desktop.kvm.connectionBar.state =
-                                {
-                                    userid: this.httprequest.userid,
-                                    xuserid: this.httprequest.xuserid,
-                                    username: this.httprequest.username,
-                                    sessionid: this.httprequest.sessionid,
-                                    remoteaddr: this.httprequest.remoteaddr,
-                                    guestname: this.httprequest.guestname,
-                                    desktop: this.httprequest.desktop
-                                };
-                            this.httprequest.desktop.kvm.connectionBar.on('close', function ()
-                            {
-                                console.info1('Connection Bar Forcefully closed');
-                                MeshServerLogEx(29, null, "Remote Desktop Connection forcefully closed by local user (" + this.state.remoteaddr + ")", this.state);
-                                for (var i in this.state.desktop.kvm._pipedStreams)
-                                {
-                                    this.state.desktop.kvm._pipedStreams[i].end();
-                                }
-                                this.state.desktop.kvm.end();
-                            });
-                        }
-                    }
-                    this.httprequest.desktop.kvm.pipe(this, { dataTypeSkip: 1 });
-                    if (this.httprequest.autolock)
-                    {
-                        destopLockHelper_pipe(this.httprequest);
-                    }
+                    kvm_consent_ok(this);
                 }
 
                 this.removeAllListeners('data');
@@ -3106,6 +3206,12 @@ function onTunnelData(data)
                 }
 
                 this.descriptorMetadata = "Remote Files";
+
+                // Look for a TSID
+                var tsid = null;
+                if ((this.httprequest.xoptions != null) && (typeof this.httprequest.xoptions.tsid == 'number')) { tsid = this.httprequest.xoptions.tsid; }
+                require('MeshAgent')._tsid = tsid;
+                this.tsid = tsid;
 
                 // Add the files session to the count to update the server
                 if (this.httprequest.userid != null) {
@@ -3129,69 +3235,31 @@ function onTunnelData(data)
                 // Perform notification if needed. Toast messages may not be supported on all platforms.
                 if (this.httprequest.consent && (this.httprequest.consent & 32))
                 {
-                    // User Consent Prompt is required
-                    // Send a console message back using the console channel, "\n" is supported.
-                    this.write(JSON.stringify({ ctrlChannel: '102938', type: 'console', msg: "Waiting for user to grant access...", msgid: 1 }));
-                    var consentMessage = currentTranslation['fileConsent'].replace('{0}', this.httprequest.realname).replace('{1}', this.httprequest.username);
-                    var consentTitle = 'MeshCentral';
-
-                    if (this.httprequest.soptions != null)
-                    {
-                        if (this.httprequest.soptions.consentTitle != null) { consentTitle = this.httprequest.soptions.consentTitle; }
-                        if (this.httprequest.soptions.consentMsgFiles != null) { consentMessage = this.httprequest.soptions.consentMsgFiles.replace('{0}', this.httprequest.realname).replace('{1}', this.httprequest.username); }
-                    }
-                    var pr;
-                    if (process.platform == 'win32')
-                    {
-                        var enhanced = false;
-                        try { require('win-userconsent'); enhanced = true; } catch (ex) { }
-                        if (enhanced)
-                        {
-                            var ipr = server_getUserImage(this.httprequest.userid);
-                            ipr.consentTitle = consentTitle;
-                            ipr.consentMessage = consentMessage;
-                            ipr.consentTimeout = this.httprequest.consentTimeout;
-                            ipr.consentAutoAccept = this.httprequest.consentAutoAccept;
-                            ipr.username = this.httprequest.realname;
-                            ipr.translations = { Allow: currentTranslation['allow'], Deny: currentTranslation['deny'], Auto: currentTranslation['autoAllowForFive'], Caption: consentMessage };
-                            pr = ipr.then(function (img)
-                            {
-                                this.consent = require('win-userconsent').create(this.consentTitle, this.consentMessage, this.username, { b64Image: img.split(',').pop(), timeout: this.consentTimeout * 1000, timeoutAutoAccept: this.consentAutoAccept, translations: this.translations, background: color_options.background, foreground: color_options.foreground });
-                                this.__childPromise.close = this.consent.close.bind(this.consent);
-                                return (this.consent);
-                            });
-                        } else
-                        {
-                            pr = require('message-box').create(consentTitle, consentMessage, this.httprequest.consentTimeout, null);
-                        }
-                    }
-                    else
-                    {
-                        pr = require('message-box').create(consentTitle, consentMessage, this.httprequest.consentTimeout, null);
-                    }
-                    pr.ws = this;
-                    this.pause();
-                    this._consentpromise = pr;
-                    this.prependOnceListener('end', files_tunnel_endhandler);
-                    pr.then(files_consentpromise_resolved, files_consentpromise_rejected);
-                }
-                else
-                {
-                    // User Consent Prompt is not required
-                    if (this.httprequest.consent && (this.httprequest.consent & 4)) {
-                        // User Notifications is required
-                        MeshServerLogEx(42, null, "Started remote files with toast notification (" + this.httprequest.remoteaddr + ")", this.httprequest);
-                        var notifyMessage = currentTranslation['fileNotify'].replace('{0}', this.httprequest.realname);
-                        var notifyTitle = "MeshCentral";
-                        if (this.httprequest.soptions != null) {
-                            if (this.httprequest.soptions.notifyTitle != null) { notifyTitle = this.httprequest.soptions.notifyTitle; }
-                            if (this.httprequest.soptions.notifyMsgFiles != null) { notifyMessage = this.httprequest.soptions.notifyMsgFiles.replace('{0}', this.httprequest.realname).replace('{1}', this.httprequest.username); }
-                        }
-                        try { require('toaster').Toast(notifyTitle, notifyMessage); } catch (ex) { }
+                    // User asked for consent so now we check if we can auto accept if no user is present/loggedin
+                    if (this.httprequest.consentAutoAcceptIfNoUser) {
+                        var p = require('user-sessions').enumerateUsers();
+                        p.sessionid = this.httprequest.sessionid;
+                        p.ws = this;
+                        p.then(function (u) {
+                            var v = [];
+                            for (var i in u) {
+                                if (u[i].State == 'Active') { v.push({ tsid: i, type: u[i].StationName, user: u[i].Username, domain: u[i].Domain }); }
+                            }
+                            if (v.length == 0) { // No user is present, auto accept
+                                // User Consent Prompt is not required
+                                files_consent_ok(this.ws);
+                            } else { 
+                                // User is present so we still need consent
+                                files_consent_ask(this.ws);
+                            }
+                        });
                     } else {
-                        MeshServerLogEx(43, null, "Started remote files without notification (" + this.httprequest.remoteaddr + ")", this.httprequest);
+                        // User Consent Prompt is required
+                        files_consent_ask(this);
                     }
-                    this.resume();
+                } else {
+                    // User Consent Prompt is not required
+                    files_consent_ok(this);
                 }
 
                 // Setup files
@@ -3337,7 +3405,7 @@ function onTunnelData(data)
                             if (cmd.sub == 'startack') { sendNextBlock = ((typeof cmd.ack == 'number') ? cmd.ack : 8); } else if (cmd.sub == 'stop') { delete this.filedownload; } else if (cmd.sub == 'ack') { sendNextBlock = 1; }
                         }
                         // Send the next download block(s)
-                        while (sendNextBlock > 0) {
+                        if (sendNextBlock > 0) {
                             sendNextBlock--;
                             var buf = Buffer.alloc(16384);
                             var len = fs.readSync(this.filedownload.f, buf, 4, 16380, null);
@@ -3865,11 +3933,11 @@ function processConsoleCommand(cmd, args, rights, sessionid) {
                 if (require('os').dns != null) { availcommands += ',dnsinfo'; }
                 try { require('linux-dhcp'); availcommands += ',dhcp'; } catch (ex) { }
                 if (process.platform == 'win32') {
-                    availcommands += ',bitlocker,cs,wpfhwacceleration,uac,volumes,rdpport';
+                    availcommands += ',bitlocker,cs,wpfhwacceleration,uac,volumes,rdpport,deskbackground';
                     if (bcdOK()) { availcommands += ',safemode'; }
                     if (require('notifybar-desktop').DefaultPinned != null) { availcommands += ',privacybar'; }
                     try { require('win-utils'); availcommands += ',taskbar'; } catch (ex) { }
-                    try { require('win-info'); availcommands += ',installedapps'; } catch (ex) { }
+                    try { require('win-info'); availcommands += ',installedapps,qfe'; } catch (ex) { }
                 }
                 if (amt != null) { availcommands += ',amt,amtconfig,amtevents'; }
                 if (process.platform != 'freebsd') { availcommands += ',vm'; }
@@ -4028,12 +4096,9 @@ function processConsoleCommand(cmd, args, rights, sessionid) {
                 break;
             case 'bitlocker':
                 if (process.platform == 'win32') {
-                    if (require('computer-identifiers').volumes_promise != null) {
-                        var p = require('computer-identifiers').volumes_promise();
+                    if (require('win-volumes').volumes_promise != null) {
+                        var p = require('win-volumes').volumes_promise();
                         p.then(function (res) { sendConsoleText(JSON.stringify(cleanGetBitLockerVolumeInfo(res), null, 1), this.session); });
-                        response = "Please wait...";
-                    } else if (require('computer-identifiers').volumes != null) {
-                        sendConsoleText(JSON.stringify(cleanGetBitLockerVolumeInfo(require('computer-identifiers').volumes()), null, 1), this.session);
                     }
                 }
                 break;
@@ -5313,6 +5378,13 @@ function processConsoleCommand(cmd, args, rights, sessionid) {
                 }
                 break;
             }
+            case 'qfe': {
+                if(process.platform == 'win32'){
+                    var qfe = require('win-info').qfe();
+                    sendConsoleText(JSON.stringify(qfe,null,1));
+                }
+                break;
+            }
             default: { // This is an unknown command, return an error message
                 response = "Unknown command \"" + cmd + "\", type \"help\" for list of available commands.";
                 break;
@@ -5581,8 +5653,8 @@ function windows_execve(name, agentfilename, sessionid) {
     var cmd = require('_GenericMarshal').CreateVariable(process.env['windir'] + '\\system32\\cmd.exe', { wide: true });
     var args = require('_GenericMarshal').CreateVariable(3 * require('_GenericMarshal').PointerSize);
     var arg1 = require('_GenericMarshal').CreateVariable('cmd.exe', { wide: true });
-    var arg2 = require('_GenericMarshal').CreateVariable('/C wmic service "' + name + '" call stopservice & "' + process.cwd() + agentfilename + '.update.exe" -b64exec ' + 'dHJ5CnsKICAgIHZhciBzZXJ2aWNlTG9jYXRpb24gPSBwcm9jZXNzLmFyZ3YucG9wKCkudG9Mb3dlckNhc2UoKTsKICAgIHJlcXVpcmUoJ3Byb2Nlc3MtbWFuYWdlcicpLmVudW1lcmF0ZVByb2Nlc3NlcygpLnRoZW4oZnVuY3Rpb24gKHByb2MpCiAgICB7CiAgICAgICAgZm9yICh2YXIgcCBpbiBwcm9jKQogICAgICAgIHsKICAgICAgICAgICAgaWYgKHByb2NbcF0ucGF0aCAmJiAocHJvY1twXS5wYXRoLnRvTG93ZXJDYXNlKCkgPT0gc2VydmljZUxvY2F0aW9uKSkKICAgICAgICAgICAgewogICAgICAgICAgICAgICAgcHJvY2Vzcy5raWxsKHByb2NbcF0ucGlkKTsKICAgICAgICAgICAgfQogICAgICAgIH0KICAgICAgICBwcm9jZXNzLmV4aXQoKTsKICAgIH0pOwp9CmNhdGNoIChlKQp7CiAgICBwcm9jZXNzLmV4aXQoKTsKfQ==' +
-        ' "' + process.execPath + '" & copy "' + process.cwd() + agentfilename + '.update.exe" "' + process.execPath + '" & wmic service "' + name + '" call startservice & erase "' + process.cwd() + agentfilename + '.update.exe"', { wide: true });
+    var arg2 = require('_GenericMarshal').CreateVariable('/C net stop "' + name + '" & "' + process.cwd() + agentfilename + '.update.exe" -b64exec ' + 'dHJ5CnsKICAgIHZhciBzZXJ2aWNlTG9jYXRpb24gPSBwcm9jZXNzLmFyZ3YucG9wKCkudG9Mb3dlckNhc2UoKTsKICAgIHJlcXVpcmUoJ3Byb2Nlc3MtbWFuYWdlcicpLmVudW1lcmF0ZVByb2Nlc3NlcygpLnRoZW4oZnVuY3Rpb24gKHByb2MpCiAgICB7CiAgICAgICAgZm9yICh2YXIgcCBpbiBwcm9jKQogICAgICAgIHsKICAgICAgICAgICAgaWYgKHByb2NbcF0ucGF0aCAmJiAocHJvY1twXS5wYXRoLnRvTG93ZXJDYXNlKCkgPT0gc2VydmljZUxvY2F0aW9uKSkKICAgICAgICAgICAgewogICAgICAgICAgICAgICAgcHJvY2Vzcy5raWxsKHByb2NbcF0ucGlkKTsKICAgICAgICAgICAgfQogICAgICAgIH0KICAgICAgICBwcm9jZXNzLmV4aXQoKTsKICAgIH0pOwp9CmNhdGNoIChlKQp7CiAgICBwcm9jZXNzLmV4aXQoKTsKfQ==' +
+        ' "' + process.execPath + '" & copy "' + process.cwd() + agentfilename + '.update.exe" "' + process.execPath + '" & net start "' + name + '" & erase "' + process.cwd() + agentfilename + '.update.exe"', { wide: true });
 
     arg1.pointerBuffer().copy(args.toBuffer());
     arg2.pointerBuffer().copy(args.toBuffer(), require('_GenericMarshal').PointerSize);
@@ -5772,6 +5844,7 @@ function handleServerConnection(state) {
 
         // Update the server on with basic info, logged in users and more advanced stuff, like Intel ME and Network Settings
         meInfoStr = null;
+        LastPeriodicServerUpdate = null;
         sendPeriodicServerUpdate(null, true);
         if (selfInfoUpdateTimer == null) {
             selfInfoUpdateTimer = setInterval(sendPeriodicServerUpdate, 1200000); // 20 minutes

@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM node:20-alpine AS builder
+FROM --platform=$BUILDPLATFORM node:22-alpine AS builder
 
 RUN mkdir -p /opt/meshcentral/meshcentral
 COPY ./ /opt/meshcentral/meshcentral/
@@ -18,7 +18,7 @@ RUN if ! [ -z "$DISABLE_TRANSLATE" ] && [ "$DISABLE_TRANSLATE" != "yes" ] && [ "
     fi
 
 # install translate/minify modules if need too
-RUN if [ -z "$DISABLE_MINIFY" ] || [ -z "$DISABLE_TRANSLATE" ]; then cd meshcentral && npm install html-minifier jsdom minify-js; fi
+RUN if [ -z "$DISABLE_MINIFY" ] || [ -z "$DISABLE_TRANSLATE" ]; then cd meshcentral && npm install html-minifier@4.0.0 jsdom@22.1.0 esprima@4.0.1; fi
 
 # first extractall if need too
 RUN if [ -z "$DISABLE_MINIFY" ] || [ -z "$DISABLE_TRANSLATE" ]; then cd meshcentral/translate && node translate.js extractall; fi
@@ -34,7 +34,7 @@ RUN rm -rf /opt/meshcentral/meshcentral/docker
 RUN rm -rf /opt/meshcentral/meshcentral/node_modules
 
 
-FROM --platform=$TARGETPLATFORM alpine:3.19
+FROM --platform=$TARGETPLATFORM alpine:3.21
 
 #Add non-root user, add installation directories and assign proper permissions
 RUN mkdir -p /opt/meshcentral/meshcentral
@@ -62,8 +62,8 @@ ENV MONGO_URL=""
 ENV HOSTNAME="localhost"
 ENV ALLOW_NEW_ACCOUNTS="true"
 ENV ALLOWPLUGINS="false"
-ENV LOCALSESSIONRECORDING="false"
-ENV MINIFY="true"
+ENV LOCALSESSIONRECORDING="true"
+ENV MINIFY="false"
 ENV WEBRTC="false"
 ENV IFRAME="false"
 ENV SESSION_KEY=""
@@ -83,12 +83,12 @@ COPY --from=builder /opt/meshcentral/meshcentral /opt/meshcentral/meshcentral
 COPY ./docker/startup.sh ./startup.sh
 COPY ./docker/config.json.template /opt/meshcentral/config.json.template
 
-# install dependencies from package.json and nedb
-RUN cd meshcentral && npm install && npm install nedb
+# install dependencies from package.json
+RUN cd meshcentral && npm install
 
 # NOTE: ALL MODULES MUST HAVE A VERSION NUMBER AND THE VERSION MUST MATCH THAT USED IN meshcentral.js mainStart()
 RUN if ! [ -z "$INCLUDE_MONGODBTOOLS" ]; then cd meshcentral && npm install mongodb@4.13.0 saslprep@1.0.3; fi
-RUN if ! [ -z "$PREINSTALL_LIBS" ] && [ "$PREINSTALL_LIBS" == "true" ]; then cd meshcentral && npm install ssh2@1.15.0 semver@7.5.4 nodemailer@6.9.8 image-size@1.0.2 wildleek@2.0.0 otplib@10.2.3 yubikeyotp@0.2.0; fi
+RUN if ! [ -z "$PREINSTALL_LIBS" ] && [ "$PREINSTALL_LIBS" == "true" ]; then cd meshcentral && npm install ssh2@1.16.0 semver@7.5.4 nodemailer@6.9.15 image-size@1.1.1 wildleek@2.0.0 otplib@10.2.3 yubikeyotp@0.2.0; fi
 
 EXPOSE 80 443 4433
 

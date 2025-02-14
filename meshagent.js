@@ -58,15 +58,15 @@ module.exports.CreateMeshAgent = function (parent, db, ws, req, args, domain) {
         dataAccounting();
 
         if ((arg == 1) || (arg == null)) { try { ws.close(); if (obj.nodeid != null) { parent.parent.debug('agent', 'Soft disconnect ' + obj.nodeid + ' (' + obj.remoteaddrport + ')'); } } catch (e) { console.log(e); } } // Soft close, close the websocket
-        if (arg == 2) { 
-            try { 
+        if (arg == 2) {
+            try {
                 if (ws._socket._parent != null)
                     ws._socket._parent.end();
                 else
                     ws._socket.end();
-                
-                if (obj.nodeid != null) { 
-                    parent.parent.debug('agent', 'Hard disconnect ' + obj.nodeid + ' (' + obj.remoteaddrport + ')'); 
+
+                if (obj.nodeid != null) {
+                    parent.parent.debug('agent', 'Hard disconnect ' + obj.nodeid + ' (' + obj.remoteaddrport + ')');
                 }
             } catch (e) { console.log(e); }
         }
@@ -616,7 +616,7 @@ module.exports.CreateMeshAgent = function (parent, db, ws, req, args, domain) {
         }
 
         if ((mesh == null) && (typeof domain.orphanagentuser == 'string')) {
-            const adminUser = parent.users['user/' + domain.id + '/' + domain.orphanagentuser.toLowerCase()];
+            const adminUser = parent.users['user/' + domain.id + '/' + domain.orphanagentuser];
             if ((adminUser != null) && (adminUser.siteadmin == 0xFFFFFFFF)) {
                 // Mesh name is hex instead of base64
                 const meshname = obj.meshid.substring(0, 18);
@@ -1936,8 +1936,9 @@ module.exports.CreateMeshAgent = function (parent, db, ws, req, args, domain) {
                     change = 1; // Don't save this change as an event to the db, so no log=1.
                     parent.removePmtFromAllOtherNodes(device); // We need to make sure to remove this push messaging token from any other device on this server, all domains included.
                 }
-
+                
                 if ((command.users != null) && (Array.isArray(command.users)) && (device.users != command.users)) { device.users = command.users; change = 1; } // Don't save this to the db.
+                if ((command.lusers != null) && (Array.isArray(command.lusers)) && (device.lusers != command.lusers)) { device.lusers = command.lusers; change = 1; } // Don't save this to the db.
                 if ((mesh.mtype == 2) && (!args.wanonly)) {
                     // In WAN mode, the hostname of a computer is not important. Don't log hostname changes.
                     if (device.host != obj.remoteaddr) { device.host = obj.remoteaddr; change = 1; changes.push('host'); }

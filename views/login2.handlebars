@@ -69,12 +69,12 @@
                             <table style="width:100%">
                                 <tr>
                                     <td>
-                                        <input id=username title="Username" style="box-sizing:border-box;width:280px;border:0;border-radius:4px;padding:8px;background-color:#FFF8CC" {{{autocomplete}}}="username" placeholder="Username" type=text maxlength=64 name=username onchange=validateLogin(1) onkeyup=validateLogin(1,event) />
+                                        <input id=username title="Username" style="box-sizing:border-box;width:280px;border:0;border-radius:4px;padding:8px;background-color:#FFF8CC" {{{autocomplete}}}="username" placeholder="Username" type=text maxlength=64 name=username required onchange=validateLogin(1) onkeyup=validateLogin(1,event) />
                                     </td>
                                 </tr>
                                 <tr>
                                     <td>
-                                        <input id=password title="Password" style="box-sizing:border-box;width:280px;border:0;border-radius:4px;padding:8px;background-color:#FFF8CC" {{{autocomplete}}}="current-password" placeholder="Password" type=password maxlength=256 name=password onchange=validateLogin(2) onkeyup=validateLogin(2,event) />
+                                        <input id=password title="Password" style="box-sizing:border-box;width:280px;border:0;border-radius:4px;padding:8px;background-color:#FFF8CC" {{{autocomplete}}}="current-password" placeholder="Password" type=password maxlength=256 name=password required onchange=validateLogin(2) onkeyup=validateLogin(2,event) />
                                     </td>
                                 </tr>
                                 <tr>
@@ -84,7 +84,7 @@
                                 </tr>
                                 <tr>
                                     <td>
-                                        <input id=loginButton style="box-sizing:border-box;width:280px;border:0;border-radius:4px;padding:6px" onclick="submitButtonClicked('loginpanelform')" type=button value="Log In" disabled="disabled" />
+                                        <input id=loginButton style="box-sizing:border-box;width:280px;border:0;border-radius:4px;padding:6px" onclick="submitButtonClicked('loginpanelform')" type=button value="Log In" />
                                     </td>
                                 </tr>
                                 <tr id="topLanguageSelectRow" style="display:none"><td id="topLanguageSelect"></td></tr>
@@ -223,6 +223,7 @@
                                         <img id=msgKeyButton src="images/login/2fa-messaging-48.png" srcset="images/login/2fa-messaging-96.png 2x" title="Messaging" loading="lazy" width="48" height="48" style="display:none;margin-left:3px;margin-right:3px;border-radius:3px;box-shadow:2px 2px 5px black;cursor:pointer;background-color:#FFF" onclick="useMsgToken(1)" />
                                         <img id=emailKeyButton src="images/login/2fa-mail-48.png" srcset="images/login/2fa-mail-96.png 2x" title="Email" loading="lazy" width="48" height="48" style="display:none;margin-left:3px;margin-right:3px;border-radius:3px;box-shadow:2px 2px 5px black;cursor:pointer;background-color:#FFF" onclick="useEmailToken(1)" />
                                         <img id=pushKeyButton src="images/login/2fa-push-48.png" srcset="images/login/2fa-push-96.png 2x" title="Device Authentication" loading="lazy" width="48" height="48" style="display:none;margin-left:3px;margin-right:3px;border-radius:3px;box-shadow:2px 2px 5px black;cursor:pointer;background-color:#FFF" onclick="usePushToken(1)" />
+                                        <img id=duoKeyButton src="images/login/2fa-duo-48.png" srcset="images/login/2fa-duo-96.png 2x" title="Duo Authentication" loading="lazy" width="48" height="48" style="display:none;margin-left:3px;margin-right:3px;border-radius:3px;box-shadow:2px 2px 5px black;cursor:pointer;background-color:#FFF" onclick="useDuoToken(1)" />
                                     </div>
                                 </td>
                             </tr>
@@ -258,6 +259,7 @@
                                         <img id=msgKeyButton2 src="images/login/2fa-msg-48.png" srcset="images/login/2fa-msg-96.png 2x" title="SMS" loading="lazy" width="48" height="48" style="display:none;margin-left:3px;margin-right:3px;border-radius:3px;box-shadow:2px 2px 5px black;cursor:pointer;background-color:#FFF" onclick="useMsgToken(2)" />
                                         <img id=emailKeyButton2 src="images/login/2fa-mail-48.png" srcset="images/login/2fa-mail-96.png 2x" title="Email" loading="lazy" width="48" height="48" style="display:none;margin-left:3px;margin-right:3px;border-radius:3px;box-shadow:2px 2px 5px black;cursor:pointer;background-color:#FFF" onclick="useEmailToken(2)" />
                                         <img id=pushKeyButton2 src="images/login/2fa-push-48.png" srcset="images/login/2fa-push-96.png 2x" title="Device Authentication" loading="lazy" width="48" height="48" style="display:none;margin-left:3px;margin-right:3px;border-radius:3px;box-shadow:2px 2px 5px black;cursor:pointer;background-color:#FFF" onclick="usePushToken(2)" />
+                                        <img id=duoKeyButton2 src="images/login/2fa-duo-48.png" srcset="images/login/2fa-duo-96.png 2x" title="Duo Authentication" loading="lazy" width="48" height="48" style="display:none;margin-left:3px;margin-right:3px;border-radius:3px;box-shadow:2px 2px 5px black;cursor:pointer;background-color:#FFF" onclick="useDuoToken(2)" />
                                     </div>
                                 </td>
                             </tr>
@@ -393,6 +395,7 @@
         var welcomeText = decodeURIComponent('{{{welcometext}}}');
         var currentpanel = 0;
         var publicKeyCredentialRequestOptions = null;
+        var otpduo = (decodeURIComponent('{{{otpduo}}}') === 'true');
         var otpemail = (decodeURIComponent('{{{otpemail}}}') === 'true');
         var otpsms = (decodeURIComponent('{{{otpsms}}}') === 'true');
         var otpmsg = (decodeURIComponent('{{{otpmsg}}}') === 'true');
@@ -409,7 +412,7 @@
         var showLanguageSelect = '{{{showLanguageSelect}}}';
 
         function startup() {
-            if (decodeURIComponent('{{{loginpicture}}}') == 'true') { Q('loginPicture').src = "loginlogo.png"; }
+            if (decodeURIComponent('{{{loginpicture}}}') == 'true') { Q('loginPicture').src = 'loginlogo.png'; }
 
             QV('welcomeTextRow', welcomeText != '');
             QH('welcomeText', welcomeText);
@@ -457,7 +460,7 @@
             // Show Language Select Box if needed
             if (showLanguageSelect === 'top' || showLanguageSelect === 'bottom') {
                 var x = '<select id=d2langselect style="box-sizing:border-box;width:280px;border:0;border-radius:4px;padding:8px" onChange="changeLanguage()">';
-                x += '<option value="*">Use Browser Language</option>';
+                x += '<option value="*">' + "Use Browser Language" + '</option>';
                 for (var i in serverLangs) {
                     var lang = serverLangs[i];
                     x += '<option value="' + lang + '"' + ((urlargs.lang == lang)?' selected':'') + '>' + lang + ' - ' + (loclist[lang]?loclist[lang]:loclistex[lang]) + '</option>';
@@ -529,7 +532,6 @@
                 if (authStrategies.indexOf('saml') >= 0) { QV('auth-saml', true); }
             }
 
-            validateLogin();
             validateCreate();
             if (loginMode.length != 0) { go(parseInt(loginMode)); } else { go(1); }
             QV('newAccountDiv', (newAccount === '1') || (newAccount === 'true')); // If new accounts are not allowed, don't display the new account link.
@@ -548,12 +550,14 @@
                 var smskey = otpsms && (messageid != 2) && (messageid != 4) && (messageid != 6);
                 var msgkey = otpmsg && (messageid != 2) && (messageid != 4) && (messageid != 6);
                 var pushkey = otppush && (messageid != 2) && (messageid != 4) && (messageid != 6);
+                var duokey = otpduo && (messageid != 2) && (messageid != 4) && (messageid != 6);
                 QV('securityKeyButton', twofakey);
                 QV('emailKeyButton', emailkey);
                 QV('smsKeyButton', smskey);
                 QV('msgKeyButton', msgkey);
                 QV('pushKeyButton', pushkey);
-                QV('2farow', twofakey || emailkey || smskey || msgkey || pushkey);
+                QV('duoKeyButton', duokey);
+                QV('2farow', twofakey || emailkey || smskey || msgkey || pushkey || duokey);
 
                 // If hardware key is an option, trigger it now
                 if (autofido && twofakey) { setTimeout(function () { useSecurityKey(1); }, 300); }
@@ -567,12 +571,14 @@
                 var smskey = otpsms && (messageid != 2) && (messageid != 4) && (messageid != 6);
                 var msgkey = otpmsg && (messageid != 2) && (messageid != 4) && (messageid != 6);
                 var pushkey = otppush && (messageid != 2) && (messageid != 4) && (messageid != 6);
+                var duokey = otpduo && (messageid != 2) && (messageid != 4) && (messageid != 6);
                 QV('securityKeyButton2', twofakey);
                 QV('emailKeyButton2', emailkey);
                 QV('smsKeyButton2', smskey);
                 QV('msgKeyButton2', msgkey);
-                QV('pushKeyButton', pushkey);
-                QV('2farow2', twofakey || emailkey || smskey || msgkey || pushkey);
+                QV('pushKeyButton2', pushkey);
+                QV('duoKeyButton2', duokey);
+                QV('2farow2', twofakey || emailkey || smskey || msgkey || pushkey || duokey);
 
                 // If hardware key is an option, trigger it now
                 if (autofido && twofakey) { setTimeout(function () { useSecurityKey(2); }, 300); }
@@ -724,6 +730,18 @@
             }
         }
 
+        function useDuoToken(panelAction) {
+            if (panelAction == 1) {
+                Q('hwtokenInput').value = '**duo**';
+                QE('tokenOkButton', true);
+                Q('tokenOkButton').click();
+            } else if (panelAction == 2) {
+                Q('resetHwtokenInput').value = '**duo**';
+                QE('resetTokenOkButton', true);
+                Q('resetTokenOkButton').click();
+            }
+        }
+
         function showPassHint(e) {
             messagebox("Password Hint", passhint);
             haltEvent(e);
@@ -773,14 +791,14 @@
         }
 
         function validateLogin(box, e) {
-            var ok = ((Q('username').value.length > 0) && (Q('username').value.indexOf(' ') == -1) && (Q('password').value.length > 0));
-            QE('loginButton', ok);
-            setDialogMode(0);
-            if ((e != null) && (e.keyCode == 13)) {
-                if ((box == 1) && (Q('username').value != '')) { Q('password').focus(); }
-                else if ((box == 2) && (Q('password').value != '')) { Q('loginButton').click(); }
-            }
-            if (e != null) { haltEvent(e); }
+            setTimeout(function(){
+                setDialogMode(0);
+                if ((e != null) && (e.keyCode == 13)) {
+                    if ((box == 1) && (Q('username').value != '')) { Q('password').focus(); }
+                    else if ((box == 2) && (Q('password').value != '')) { Q('loginButton').click(); }
+                }
+                if (e != null) { haltEvent(e); }
+            }, 100);
         }
 
         function validateCreate(box, e) {
